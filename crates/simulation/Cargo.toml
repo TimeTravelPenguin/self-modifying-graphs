@@ -1,0 +1,42 @@
+[package]
+name = "simulation"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { version = "0.20.1", features = ["2d", "bevy_dev_tools", "debug", "dynamic_linking", "ui"] }
+bevy_rand = { version = "0.16.0", features = ["chacha20"] }
+catppuccin = { path = "/Users/filup/Documents/Programming/Rust/catppuccin_rust", features = ["bevy"] }
+itertools = "0.15.0"
+log = {
+  version = "0.4",
+  features = [
+    "max_level_debug",
+    "release_max_level_warn",
+  ]
+}
+rayon = "1.12.0"
+serde = { version = "1.0.229", features = ["derive"] }
+
+[features]
+# Default to a native dev build.
+default = ["dev_native"]
+dev = [
+  "bevy/bevy_dev_tools",
+  "bevy/bevy_ui_debug",
+  "bevy/debug",
+  # Improve error messages coming from Bevy
+  "bevy/track_location",
+]
+dev_native = [
+  # Improve compile times for dev builds by linking Bevy as a dynamic library.
+  "bevy/dynamic_linking",
+  # Enable embedded asset hot reloading for native dev builds.
+  "bevy/embedded_watcher",
+  # Enable asset hot reloading for native dev builds.
+  "bevy/file_watcher",
+  "dev",
+]
+
+[lints]
+workspace = true

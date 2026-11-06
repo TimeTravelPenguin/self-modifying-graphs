@@ -83,7 +83,7 @@ impl GridTiles {
 struct GridCamera;
 
 #[derive(Resource)]
-pub(super) struct RenderAssets {
+pub struct RenderAssets {
     pub tile: Handle<Image>,
     pub vertex: Handle<Image>,
 }
@@ -102,7 +102,7 @@ impl FromWorld for RenderAssets {
     }
 }
 
-pub(crate) fn setup(
+pub fn setup(
     mut commands: Commands,
     layout: Res<GridLayout>,
     palette: Res<RenderPalette>,
