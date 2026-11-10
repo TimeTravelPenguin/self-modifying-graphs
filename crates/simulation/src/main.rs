@@ -1,20 +1,16 @@
-use bevy::{platform::collections::HashMap, prelude::*};
+use simulation::{Position, simulation::resources::ResourceField};
 
-use simulation::{demo, grid::GridCoord, rendering};
+fn main() -> Result<(), String> {
+    let resources = ResourceField::new_random(10, 10, 42, 1.2, 100.0);
+    for y in 0..resources.height() {
+        for x in 0..resources.width() {
+            let position = Position::new(x, y);
+            let resource_value = resources.get_resource_at(position).unwrap_or(0.0);
 
-#[derive(Component, Clone, Copy, Debug)]
-pub struct Node {
-    pub energy: f32,
-}
+            print!("{:6.2} ", resource_value);
+        }
+        println!();
+    }
 
-#[derive(Resource, Default)]
-pub struct NodeManager {
-    pub nodes: HashMap<GridCoord, Entity>,
-}
-
-fn main() {
-    App::new()
-        .add_plugins((DefaultPlugins, rendering::RenderingPlugin))
-        .add_systems(Startup, demo::setup.after(rendering::setup))
-        .run();
+    Ok(())
 }
