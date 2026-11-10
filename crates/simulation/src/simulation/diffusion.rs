@@ -1,0 +1,217 @@
+use rayon::{
+    iter::{IndexedParallelIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
+
+use crate::simulation::resources::ResourceField;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Neighbourhood {
+    /// 5-point Laplacian: 4 cardinal neighbours.
+    VonNeumann,
+
+    /// 9-point Laplacian: 4 cardinal + 4 diagonal neighbours.
+    Moore,
+}
+
+#[derive(Debug)]
+pub struct Diffuser {
+    neighbourhood: Neighbourhood,
+    buffer: Vec<f64>,
+}
+
+impl Diffuser {
+    pub fn new(neighbourhood: Neighbourhood) -> Self {
+        Self {
+            neighbourhood,
+            buffer: Vec::new(),
+        }
+    }
+
+    pub fn set_neighbourhood(&mut self, neighbourhood: Neighbourhood) {
+        self.neighbourhood = neighbourhood;
+    }
+
+    pub fn diffuse(
+        &mut self,
+        field: &mut ResourceField,
+        diffusion_coefficient: f64,
+        dt: f64,
+        spacing: f64,
+    ) {
+        assert!(diffusion_coefficient.is_finite() && diffusion_coefficient >= 0.0);
+        assert!(dt.is_finite() && dt >= 0.0);
+        assert!(spacing.is_finite() && spacing > 0.0);
+
+        let lambda = diffusion_coefficient * dt / (spacing * spacing);
+
+        let max_lambda = match self.neighbourhood {
+            Neighbourhood::VonNeumann => 0.25,
+            Neighbourhood::Moore => 0.30,
+        };
+
+        assert!(
+            lambda.is_finite() && lambda <= max_lambda,
+            "Diffusion timestep is too large: {lambda} > {max_lambda}"
+        );
+
+        let width = field.width();
+        let height = field.height();
+
+        assert_eq!(field.resources().len(), width * height);
+
+        if lambda == 0.0 || width == 0 || height == 0 {
+            return;
+        }
+
+        self.buffer.resize(field.resources().len(), 0.0);
+
+        match self.neighbourhood {
+            Neighbourhood::VonNeumann => {
+                apply::<false>(field.resources(), &mut self.buffer, width, height, lambda);
+            }
+            Neighbourhood::Moore => {
+                apply::<true>(
+                    field.resources(),
+                    &mut self.buffer,
+                    width,
+                    height,
+                    lambda / 6.0,
+                );
+            }
+        }
+
+        field.swap_resources(&mut self.buffer);
+    }
+}
+
+/// Apply a Laplacian to the grid.
+///
+/// DIAGONALS = false: 5-point stencil.
+/// DIAGONALS = true:  9-point stencil.
+///
+/// `scale` includes D * dt / h² and, for the nine-point
+/// stencil, the additional factor 1/6.
+fn apply<const DIAGONALS: bool>(
+    src: &[f64],
+    dst: &mut [f64],
+    width: usize,
+    height: usize,
+    scale: f64,
+) {
+    assert_eq!(src.len(), width * height);
+    assert_eq!(dst.len(), src.len());
+
+    if width == 0 || height == 0 {
+        return;
+    }
+
+    let process_row = |y: usize, dst_row: &mut [f64]| {
+        // Handle boundaries and small grids.
+        if width < 3 || height < 3 || y == 0 || y == height - 1 {
+            for (x, value) in dst_row.iter_mut().enumerate() {
+                *value = boundary::<DIAGONALS>(src, width, height, x, y, scale);
+            }
+            return;
+        }
+
+        let offset = y * width;
+
+        // Three adjacent source rows.
+        let above = &src[offset - width..offset];
+        let current_row = &src[offset..offset + width];
+        let below = &src[offset + width..offset + 2 * width];
+
+        // Left boundary.
+        dst_row[0] = boundary::<DIAGONALS>(src, width, height, 0, y, scale);
+
+        // Interior cells.
+        for x in 1..width - 1 {
+            let current = current_row[x];
+
+            let cardinal =
+                above[x] + below[x] + current_row[x - 1] + current_row[x + 1] - 4.0 * current;
+
+            let laplacian = if DIAGONALS {
+                let diagonal =
+                    above[x - 1] + above[x + 1] + below[x - 1] + below[x + 1] - 4.0 * current;
+
+                4.0 * cardinal + diagonal
+            } else {
+                cardinal
+            };
+
+            dst_row[x] = current + scale * laplacian;
+        }
+
+        // Right boundary.
+        dst_row[width - 1] = boundary::<DIAGONALS>(src, width, height, width - 1, y, scale);
+    };
+
+    // Avoid parallel overhead for small grids.
+    const PARALLEL_THRESHOLD: usize = 65_536;
+
+    if src.len() < PARALLEL_THRESHOLD || height < 4 {
+        for (y, row) in dst.chunks_mut(width).enumerate() {
+            process_row(y, row);
+        }
+    } else {
+        dst.par_chunks_mut(width)
+            .enumerate()
+            .for_each(|(y, row)| process_row(y, row));
+    }
+}
+
+/// Boundary stencil using only valid neighbours.
+///
+/// Missing neighbours contribute zero flux.
+#[inline]
+fn boundary<const DIAGONALS: bool>(
+    src: &[f64],
+    width: usize,
+    height: usize,
+    x: usize,
+    y: usize,
+    scale: f64,
+) -> f64 {
+    let i = y * width + x;
+    let current = src[i];
+
+    let mut cardinal = 0.0;
+
+    if x > 0 {
+        cardinal += src[i - 1] - current;
+    }
+    if x + 1 < width {
+        cardinal += src[i + 1] - current;
+    }
+    if y > 0 {
+        cardinal += src[i - width] - current;
+    }
+    if y + 1 < height {
+        cardinal += src[i + width] - current;
+    }
+
+    let laplacian = if DIAGONALS {
+        let mut diagonal = 0.0;
+
+        if x > 0 && y > 0 {
+            diagonal += src[i - width - 1] - current;
+        }
+        if x + 1 < width && y > 0 {
+            diagonal += src[i - width + 1] - current;
+        }
+        if x > 0 && y + 1 < height {
+            diagonal += src[i + width - 1] - current;
+        }
+        if x + 1 < width && y + 1 < height {
+            diagonal += src[i + width + 1] - current;
+        }
+
+        4.0 * cardinal + diagonal
+    } else {
+        cardinal
+    };
+
+    current + scale * laplacian
+}

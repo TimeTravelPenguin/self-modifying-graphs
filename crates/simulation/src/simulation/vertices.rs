@@ -8,6 +8,12 @@ use crate::Position;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref, DerefMut)]
 pub struct VertexEntity(Entity);
 
+impl VertexEntity {
+    pub fn new(entity: Entity) -> Self {
+        Self(entity)
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct VertexEntityMap {
     vertices: HashMap<Position, VertexEntity>,
