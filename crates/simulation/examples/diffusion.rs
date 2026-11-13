@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy_rand::{global::GlobalRng, plugin::EntropyPlugin, prelude::ChaCha12Rng};
+use rand::RngExt;
 use simulation::simulation::{
     bounds::{BoundsAveraging, BoundsNormalizer},
     diffusion::{Diffuser, Neighbourhood},
@@ -28,6 +30,9 @@ struct Heatmap {
 }
 
 #[derive(Component)]
+struct OnScreenInfo;
+
+#[derive(Component)]
 struct Tile;
 
 #[derive(Resource, Deref, DerefMut)]
@@ -39,33 +44,52 @@ struct ResourceFieldRes(ResourceField);
 #[derive(Resource, Deref, DerefMut)]
 struct BoundsNormalizerRes(BoundsNormalizer);
 
-fn main() -> Result<(), String> {
-    let diffuser = Diffuser::new(Neighbourhood::VonNeumann);
-    let mut bounds_norm = BoundsNormalizer::new(BoundsAveraging::EMA { tau: 1.0 });
-    // let mut bounds_norm = BoundsNormalizer::new(BoundsAveraging::None);
+fn main() -> AppExit {
     let resources =
         ResourceField::new_random(GRID_ROWS, GRID_COLS, RANDOM_SEED, SCALE, MAX_RESOURCE);
 
+    let mut app = App::new();
+    app.add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                resolution: (1280, 850).into(),
+                ..default()
+            }),
+            ..default()
+        }),
+        EntropyPlugin::<ChaCha12Rng>::default(),
+    ));
+
+    configure_simulation(&mut app, resources);
+
+    println!("{:#?}", WindowPlugin::default().primary_window);
+    app.run()
+}
+
+fn configure_simulation(app: &mut App, resources: ResourceField) {
+    let diffuser = Diffuser::new(Neighbourhood::VonNeumann);
+    let mut bounds_norm = BoundsNormalizer::new(BoundsAveraging::EMA { tau: 1.0 });
+    // let mut bounds_norm = BoundsNormalizer::new(BoundsAveraging::None);
     bounds_norm.update_bounds(&resources, DIFFUSION_DT);
 
-    let _ = App::new()
-        .add_plugins(DefaultPlugins)
-        .insert_resource(Time::<Fixed>::from_duration(STEP_INTERVAL))
+    app.insert_resource(Time::<Fixed>::from_duration(STEP_INTERVAL))
         .insert_resource(DiffuserRes(diffuser))
         .insert_resource(BoundsNormalizerRes(bounds_norm))
         .insert_resource(ResourceFieldRes(resources))
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, apply_diffusion)
-        .add_systems(Update, update_heatmap)
-        .run();
-
-    Ok(())
+        .add_systems(Update, handle_keyboard_input)
+        .add_systems(
+            Update,
+            (update_heatmap, update_on_screen_info).after(handle_keyboard_input),
+        );
 }
 
 fn setup(
     mut commands: Commands,
     resources: Res<ResourceFieldRes>,
     bounds: Res<BoundsNormalizerRes>,
+    diffuser: Res<DiffuserRes>,
 ) {
     commands.spawn(Camera2d);
 
@@ -74,6 +98,30 @@ fn setup(
     let mut tiles = Vec::with_capacity(height * width);
     let offset = Vec2::new(width as f32, height as f32) * TILE_SIZE * 0.5;
 
+    spawn_tiles(
+        &mut commands,
+        &mut tiles,
+        &resources,
+        &bounds,
+        height,
+        width,
+        offset,
+    );
+
+    commands.insert_resource(Heatmap { tiles });
+
+    spawn_on_screen_info(&mut commands, &diffuser, &bounds);
+}
+
+fn spawn_tiles(
+    commands: &mut Commands,
+    tiles: &mut Vec<Entity>,
+    resources: &ResourceField,
+    bounds: &BoundsNormalizer,
+    height: usize,
+    width: usize,
+    offset: Vec2,
+) {
     for y in 0..height {
         for x in 0..width {
             let value = resources.get_resource_at((x, y)).unwrap();
@@ -106,8 +154,49 @@ fn setup(
             tiles.push(tile.id());
         }
     }
+}
 
-    commands.insert_resource(Heatmap { tiles });
+fn spawn_on_screen_info(commands: &mut Commands, diffuser: &Diffuser, bounds: &BoundsNormalizer) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(12.0),
+                left: px(12.0),
+                max_width: percent(95.0),
+                padding: UiRect::all(px(10.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(4.0),
+                ..default()
+            },
+            // BackgroundColor(Color::srgb(0.08, 0.09, 0.12)),
+        ))
+        .with_children(|parent| {
+            parent.spawn((Text::new("Simulation Info"), TextFont::from_font_size(20.0)));
+            parent.spawn((
+                OnScreenInfo,
+                Text::new(on_screen_info_text(diffuser, bounds)),
+                TextFont::from_font_size(14.0),
+            ));
+        });
+}
+
+fn on_screen_info_text(diffuser: &Diffuser, bounds: &BoundsNormalizer) -> String {
+    let limits = match bounds.bounds() {
+        Some((min, max)) => format!("({min:.2}, {max:.2})"),
+        None => "N/A".to_string(),
+    };
+
+    format!(
+        "Diffusion Neighborhood: {:?}\n\
+         Bounds Averaging Method: {:?}\n\
+         Bounds (min, max): {limits}\n\
+         Diffusion Coefficient: {DIFFUSION_COEFFICIENT:.2}\n\
+         Diffusion Time Step (dt): {DIFFUSION_DT:.2}\n\
+         Diffusion Spacing (h): {DIFFUSION_SPACING:.2}",
+        diffuser.neighbourhood(),
+        bounds.method(),
+    )
 }
 
 fn apply_diffusion(
@@ -191,5 +280,102 @@ fn heatmap_color(t: f32) -> Color {
         MIN.mix(&MID, t * 2.0)
     } else {
         MID.mix(&MAX, (t - 0.5) * 2.0)
+    }
+}
+
+fn handle_keyboard_input(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut resources: ResMut<ResourceFieldRes>,
+    mut diffuser: ResMut<DiffuserRes>,
+    mut bounds: ResMut<BoundsNormalizerRes>,
+    mut rng: Single<&mut ChaCha12Rng, With<GlobalRng>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        let neighbourhood = match diffuser.neighbourhood() {
+            Neighbourhood::VonNeumann => Neighbourhood::Moore,
+            Neighbourhood::Moore => Neighbourhood::VonNeumann,
+        };
+
+        diffuser.set_neighbourhood(neighbourhood);
+        println!("Switched to {:?}", neighbourhood);
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyR) {
+        let seed = rng.random();
+        resources.randomize(seed, SCALE, MAX_RESOURCE);
+        bounds.reset_bounds();
+        bounds.update_bounds(&resources, DIFFUSION_DT);
+        println!("Reset resource field with seed {seed}");
+    }
+}
+
+fn update_on_screen_info(
+    diffuser: Res<DiffuserRes>,
+    bounds: Res<BoundsNormalizerRes>,
+    mut text: Single<&mut Text, With<OnScreenInfo>>,
+) {
+    if !diffuser.is_changed() && !bounds.is_changed() {
+        return;
+    }
+
+    text.set_if_neq(Text::new(on_screen_info_text(&diffuser, &bounds)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn on_screen_info_tracks_diffusion_and_keyboard_input() {
+        let mut resources = ResourceField::new_random(2, 2, RANDOM_SEED, SCALE, MAX_RESOURCE);
+        resources
+            .resources_mut()
+            .copy_from_slice(&[20.0, 40.0, 60.0, 80.0]);
+
+        let mut app = App::new();
+        app.add_plugins(EntropyPlugin::<ChaCha12Rng>::with_seed([0; 32]))
+            .init_resource::<ButtonInput<KeyCode>>();
+        configure_simulation(&mut app, resources);
+
+        app.update();
+        let world = app.world_mut();
+        let panel = world
+            .query_filtered::<Entity, With<OnScreenInfo>>()
+            .single(world)
+            .unwrap();
+        let text = world.get::<Text>(panel).unwrap();
+        assert!(text.contains("Diffusion Neighborhood: VonNeumann"));
+        assert!(text.contains("Bounds (min, max): (20.00, 80.00)"));
+
+        world.run_schedule(FixedUpdate);
+        app.update();
+        let text = app.world().get::<Text>(panel).unwrap();
+        assert!(text.contains("Bounds (min, max): (20.46, 79.54)"));
+
+        let previous_field = app
+            .world()
+            .resource::<ResourceFieldRes>()
+            .resources()
+            .clone();
+        let mut keyboard = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keyboard.press(KeyCode::Space);
+        keyboard.press(KeyCode::KeyR);
+        app.update();
+
+        let world = app.world();
+        let bounds = world.resource::<BoundsNormalizerRes>();
+        let (min, max) = bounds.bounds().unwrap();
+        let text = world.get::<Text>(panel).unwrap();
+        assert!(text.contains("Diffusion Neighborhood: Moore"));
+        assert!(text.contains(&format!("Bounds (min, max): ({min:.2}, {max:.2})")));
+
+        let resources = world.resource::<ResourceFieldRes>();
+        assert_ne!(resources.resources(), &previous_field);
+
+        let heatmap = world.resource::<Heatmap>();
+        for (&entity, &value) in heatmap.tiles.iter().zip(resources.resources()) {
+            let sprite = world.get::<Sprite>(entity).unwrap();
+            assert_eq!(sprite.color, heatmap_color(bounds.normalize(value)));
+        }
     }
 }

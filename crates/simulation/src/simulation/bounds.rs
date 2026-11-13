@@ -46,6 +46,10 @@ impl BoundsNormalizer {
         }
     }
 
+    pub fn method(&self) -> BoundsAveraging {
+        self.averaging
+    }
+
     /// Returns the current minimum and maximum, if a nonempty field has been observed since reset.
     pub fn bounds(&self) -> Option<(f64, f64)> {
         self.bounds

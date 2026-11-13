@@ -28,6 +28,10 @@ impl Diffuser {
         }
     }
 
+    pub fn neighbourhood(&self) -> Neighbourhood {
+        self.neighbourhood
+    }
+
     pub fn set_neighbourhood(&mut self, neighbourhood: Neighbourhood) {
         self.neighbourhood = neighbourhood;
     }
