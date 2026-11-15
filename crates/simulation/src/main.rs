@@ -1,27 +1,51 @@
 use simulation::{
-    Position,
-    field::{Diffuser, Neighbourhood, ResourceField},
+    field::Neighbourhood,
+    graph::Uptake,
+    simulation::{Simulation, SimulationConfig, SimulationError},
 };
 
-fn main() -> Result<(), String> {
-    let mut diffuser = Diffuser::new(Neighbourhood::VonNeumann);
-    let mut resources = ResourceField::new_random(10, 10, 42, 1.2, 100.0);
+const SEED: u32 = 42;
+
+fn main() -> Result<(), SimulationError> {
+    let config = SimulationConfig {
+        width: 10,
+        height: 10,
+        spacing: 1.0,
+        initial_resource: 100.0,
+        resource_noise_scale: 10.0,
+        diffusion_coefficient: 0.8,
+        neighbourhood: Neighbourhood::Moore,
+    };
+
+    let mut simulation = Simulation::from_seed(config, SEED);
+
+    let v1 = simulation.add_vertex(
+        (5, 5),
+        Uptake::new(10.0, 0.75).expect("Invalid uptake parameters"),
+    )?;
+    let v2 = simulation.add_vertex(
+        (5, 6),
+        Uptake::new(5.0, 0.5).expect("Invalid uptake parameters"),
+    )?;
+    let edge = simulation.add_edge(v1, v2)?;
 
     for _ in 0..10 {
-        for y in 0..resources.height() {
-            for x in 0..resources.width() {
-                let position = Position::new(x, y);
-                let resource_value = resources.get_resource_at(position).unwrap_or(0.0);
+        let res = simulation
+            .field()
+            .get_resource_at((5, 5))
+            .expect("Position should be valid");
+        println!("Resource at (5, 5): {}", res);
 
-                print!("{:6.2} ", resource_value);
-            }
+        let vert = simulation.graph().vertex(v1).expect("Vertex should exist");
+        println!("{:?}", vert);
 
-            println!();
-        }
+        let vert = simulation.graph().vertex(v2).expect("Vertex should exist");
+        println!("{:?}", vert);
 
-        println!("\n\n");
+        let edge = simulation.graph().edge(edge).expect("Edge should exist");
+        println!("{:?}\n", edge);
 
-        diffuser.diffuse(&mut resources, 0.01, 0.1, 1.0);
+        simulation.step(0.1);
     }
 
     Ok(())

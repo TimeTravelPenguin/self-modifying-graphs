@@ -1,5 +1,6 @@
 //! Owns the field and graph and advances them one simulation tick at a time.
 
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 use thiserror::Error;
 
 use crate::{
@@ -18,13 +19,30 @@ pub mod resources {
     pub use crate::field::ResourceField;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum AddVertexError {
+#[derive(Debug, Error)]
+pub enum SimulationError {
+    #[error("a starting vertex requires a grid with positive width and height")]
+    EmptyGrid,
+
     #[error("position ({}, {}) is outside the field", .0.x, .0.y)]
-    OutOfBounds(Position),
+    VertexOutOfBounds(Position),
 
     #[error("position ({}, {}) is occupied", .0.x, .0.y)]
-    Occupied(Position),
+    CellOccupied(Position),
+
+    #[error(transparent)]
+    AddEdge(#[from] AddEdgeError),
+}
+
+pub struct SimulationConfig {
+    pub width: u32,
+    pub height: u32,
+    pub spacing: f64,
+    pub initial_resource: f64,
+    /// Perlin noise scale in grid cells.
+    pub resource_noise_scale: f64,
+    pub diffusion_coefficient: f64,
+    pub neighbourhood: diffusion::Neighbourhood,
 }
 
 pub struct Simulation {
@@ -70,6 +88,44 @@ impl Simulation {
         }
     }
 
+    /// Generates a seeded resource field and starts with an empty graph.
+    pub fn from_seed(config: SimulationConfig, seed: u32) -> Self {
+        let field = ResourceField::new_random(
+            config.height,
+            config.width,
+            seed,
+            config.resource_noise_scale,
+            config.initial_resource,
+        );
+        let diffuser = Diffuser::new(config.neighbourhood);
+
+        Self::new(
+            field,
+            diffuser,
+            config.diffusion_coefficient,
+            config.spacing,
+        )
+    }
+
+    /// Generates a seeded resource field and places one vertex in a uniformly sampled cell.
+    pub fn single_vertex_from_seed(
+        config: SimulationConfig,
+        seed: u32,
+        uptake: Uptake,
+    ) -> Result<Self, SimulationError> {
+        if config.width == 0 || config.height == 0 {
+            return Err(SimulationError::EmptyGrid);
+        }
+
+        let mut simulation = Self::from_seed(config, seed);
+        let mut rng = StdRng::seed_from_u64(u64::from(seed));
+        let x = rng.random_range(0..simulation.field.width());
+        let y = rng.random_range(0..simulation.field.height());
+
+        simulation.add_vertex((x, y), uptake)?;
+        Ok(simulation)
+    }
+
     pub fn field(&self) -> &ResourceField {
         &self.field
     }
@@ -87,15 +143,15 @@ impl Simulation {
         &mut self,
         position: impl Into<Position>,
         uptake: Uptake,
-    ) -> Result<VertexId, AddVertexError> {
+    ) -> Result<VertexId, SimulationError> {
         let position = position.into();
         let index = self
             .field
             .cell_index(position)
-            .ok_or(AddVertexError::OutOfBounds(position))?;
+            .ok_or(SimulationError::VertexOutOfBounds(position))?;
 
         if self.occupancy[index].is_some() {
-            return Err(AddVertexError::Occupied(position));
+            return Err(SimulationError::CellOccupied(position));
         }
 
         let vertex_id = self.graph.add_vertex(position, uptake);
@@ -109,12 +165,13 @@ impl Simulation {
             .field
             .cell_index(vertex.position())
             .expect("vertex is in the field");
+
         self.occupancy[index] = None;
         Some(vertex)
     }
 
-    pub fn add_edge(&mut self, from: VertexId, to: VertexId) -> Result<EdgeId, AddEdgeError> {
-        self.graph.add_edge(from, to)
+    pub fn add_edge(&mut self, from: VertexId, to: VertexId) -> Result<EdgeId, SimulationError> {
+        self.graph.add_edge(from, to).map_err(Into::into)
     }
 
     pub fn remove_edge(&mut self, edge_id: EdgeId) -> Option<Edge> {
@@ -140,6 +197,7 @@ impl Simulation {
                 .field
                 .get_resource_at_mut(vertex.position())
                 .expect("vertex is in the field");
+
             vertex.consume(available, dt);
         }
     }
@@ -163,14 +221,18 @@ mod tests {
         let right = simulation.add_vertex((1, 0), uptake).unwrap();
         let edge = simulation.add_edge(left, right).unwrap();
 
-        assert_eq!(
+        assert!(matches!(
             simulation.add_vertex((0, 0), uptake),
-            Err(AddVertexError::Occupied((0, 0).into()))
-        );
-        assert_eq!(
+            Err(SimulationError::CellOccupied(Position { x: 0, y: 0 }))
+        ));
+        assert!(matches!(
             simulation.add_vertex((2, 0), uptake),
-            Err(AddVertexError::OutOfBounds((2, 0).into()))
-        );
+            Err(SimulationError::VertexOutOfBounds(Position { x: 2, y: 0 }))
+        ));
+        assert!(matches!(
+            simulation.add_edge(right, left),
+            Err(SimulationError::AddEdge(AddEdgeError::DuplicateEdge(edge_id))) if edge_id == edge
+        ));
         assert_eq!(simulation.vertex_at((0, 0)), Some(left));
         assert_eq!(simulation.graph().vertices().count(), 2);
 
@@ -190,6 +252,10 @@ mod tests {
         simulation.remove_vertex(left).unwrap();
         assert_eq!(simulation.vertex_at((0, 0)), None);
         assert!(simulation.graph().edge(edge).is_none());
+        assert!(matches!(
+            simulation.add_edge(left, right),
+            Err(SimulationError::AddEdge(AddEdgeError::UnknownVertex(vertex_id))) if vertex_id == left
+        ));
         assert!(
             simulation
                 .graph()
