@@ -3,7 +3,7 @@ use bevy::{
     prelude::{Deref, DerefMut, Entity},
 };
 
-use crate::simulation::vertices::VertexEntity;
+use super::VertexEntity;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref, DerefMut)]
 pub struct EdgeEntity(Entity);
@@ -53,7 +53,7 @@ impl EdgeEntityMap {
 mod tests {
     use bevy::prelude::World;
 
-    use super::*;
+    use super::{EdgeEntity, EdgeEntityMap, VertexEntity};
 
     #[test]
     fn self_loop_coexists_with_an_undirected_edge() {

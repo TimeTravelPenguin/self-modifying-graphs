@@ -1,3 +1,6 @@
+pub mod field;
+pub mod graph;
+pub mod normalization;
 pub mod simulation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

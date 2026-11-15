@@ -2,6 +2,10 @@ use noise::{NoiseFn, Perlin};
 
 use crate::Position;
 
+mod diffusion;
+
+pub use diffusion::{Diffuser, Neighbourhood};
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResourceField {
     height: usize,
@@ -24,6 +28,7 @@ impl ResourceField {
         };
 
         field.randomize(seed, scale, max_value);
+
         field
     }
 
@@ -59,7 +64,7 @@ impl ResourceField {
         &mut self.resources
     }
 
-    pub(super) fn swap_resources(&mut self, buffer: &mut Vec<f64>) {
+    fn swap_resources(&mut self, buffer: &mut Vec<f64>) {
         assert_eq!(buffer.len(), self.resources.len());
         std::mem::swap(&mut self.resources, buffer);
     }

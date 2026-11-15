@@ -1,4 +1,4 @@
-use crate::simulation::resources::ResourceField;
+use crate::field::ResourceField;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum BoundsAveraging {
@@ -62,6 +62,7 @@ impl BoundsNormalizer {
         };
 
         let range = max - min;
+
         if !value.is_finite() || !range.is_finite() || range <= 1e-12 {
             return 0.5;
         }
@@ -114,6 +115,7 @@ impl BoundsNormalizer {
 
 fn smooth_bound(previous: f64, observed: f64, alpha: f64) -> f64 {
     let change = observed - previous;
+
     if change.is_finite() && alpha < 1.0 {
         return previous + alpha * change;
     }

@@ -3,7 +3,7 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use crate::simulation::resources::ResourceField;
+use super::ResourceField;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Neighbourhood {
@@ -116,6 +116,7 @@ fn apply<const DIAGONALS: bool>(
             for (x, value) in dst_row.iter_mut().enumerate() {
                 *value = boundary::<DIAGONALS>(src, width, height, x, y, scale);
             }
+
             return;
         }
 
@@ -186,12 +187,15 @@ fn boundary<const DIAGONALS: bool>(
     if x > 0 {
         cardinal += src[i - 1] - current;
     }
+
     if x + 1 < width {
         cardinal += src[i + 1] - current;
     }
+
     if y > 0 {
         cardinal += src[i - width] - current;
     }
+
     if y + 1 < height {
         cardinal += src[i + width] - current;
     }
@@ -202,12 +206,15 @@ fn boundary<const DIAGONALS: bool>(
         if x > 0 && y > 0 {
             diagonal += src[i - width - 1] - current;
         }
+
         if x + 1 < width && y > 0 {
             diagonal += src[i - width + 1] - current;
         }
+
         if x > 0 && y + 1 < height {
             diagonal += src[i + width - 1] - current;
         }
+
         if x + 1 < width && y + 1 < height {
             diagonal += src[i + width + 1] - current;
         }
@@ -218,4 +225,65 @@ fn boundary<const DIAGONALS: bool>(
     };
 
     current + scale * laplacian
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Diffuser, Neighbourhood, ResourceField};
+
+    const LAMBDA: f64 = 3.0 / 16.0;
+
+    #[test]
+    fn stencils_spread_an_interior_impulse_on_a_rectangular_field() {
+        let cases = [
+            (
+                Neighbourhood::VonNeumann,
+                [
+                    [0.0, LAMBDA, 0.0, 0.0],
+                    [LAMBDA, 0.25, LAMBDA, 0.0],
+                    [0.0, LAMBDA, 0.0, 0.0],
+                ],
+            ),
+            (
+                Neighbourhood::Moore,
+                [
+                    [1.0 / 32.0, 0.125, 1.0 / 32.0, 0.0],
+                    [0.125, 0.375, 0.125, 0.0],
+                    [1.0 / 32.0, 0.125, 1.0 / 32.0, 0.0],
+                ],
+            ),
+        ];
+
+        for (neighbourhood, expected) in cases {
+            let mut field = ResourceField::new_random(3, 4, 0, 1.0, 0.0);
+            let impulse_index = field.width() + 1;
+            field.resources_mut()[impulse_index] = 1.0;
+
+            Diffuser::new(neighbourhood).diffuse(&mut field, LAMBDA, 1.0, 1.0);
+
+            assert_eq!(
+                field.resources(),
+                expected.as_flattened(),
+                "{neighbourhood:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_flux_boundaries_conserve_mass_on_thin_and_parallel_grids() {
+        for neighbourhood in [Neighbourhood::VonNeumann, Neighbourhood::Moore] {
+            for (height, width) in [(3, 1), (256, 256)] {
+                let mut field = ResourceField::new_random(height, width, 0, 1.0, 0.0);
+                field.resources_mut()[0] = 1.0;
+
+                Diffuser::new(neighbourhood).diffuse(&mut field, LAMBDA, 1.0, 1.0);
+
+                assert_eq!(
+                    field.resources().iter().sum::<f64>(),
+                    1.0,
+                    "{neighbourhood:?} on a {width}×{height} field",
+                );
+            }
+        }
+    }
 }

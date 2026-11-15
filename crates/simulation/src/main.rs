@@ -1,9 +1,6 @@
 use simulation::{
     Position,
-    simulation::{
-        diffusion::{Diffuser, Neighbourhood},
-        resources::ResourceField,
-    },
+    field::{Diffuser, Neighbourhood, ResourceField},
 };
 
 fn main() -> Result<(), String> {
@@ -18,8 +15,10 @@ fn main() -> Result<(), String> {
 
                 print!("{:6.2} ", resource_value);
             }
+
             println!();
         }
+
         println!("\n\n");
 
         diffuser.diffuse(&mut resources, 0.01, 0.1, 1.0);
