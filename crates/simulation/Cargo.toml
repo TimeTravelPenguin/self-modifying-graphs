@@ -9,7 +9,7 @@ bevy = {
   features = ["2d", "bevy_dev_tools", "bevy_feathers", "debug", "dynamic_linking", "ui"],
 }
 bevy_rand = { version = "0.16.0", features = ["chacha20"] }
-catppuccin = { path = "/Users/filup/Documents/Programming/Rust/catppuccin_rust", features = ["bevy"] }
+catppuccin = { version = "2.9.1", features = ["bevy"] }
 itertools = "0.15.0"
 log = {
   version = "0.4",
