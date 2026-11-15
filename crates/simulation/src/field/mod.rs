@@ -70,13 +70,21 @@ impl ResourceField {
     }
 
     pub fn get_resource_at(&self, position: impl Into<Position>) -> Option<f64> {
-        let position = position.into();
+        self.cell_index(position.into())
+            .map(|index| self.resources[index])
+    }
 
+    pub(crate) fn get_resource_at_mut(&mut self, position: Position) -> Option<&mut f64> {
+        let index = self.cell_index(position)?;
+        Some(&mut self.resources[index])
+    }
+
+    pub(crate) fn cell_index(&self, position: Position) -> Option<usize> {
         if position.x >= self.width || position.y >= self.height {
             return None;
         }
 
-        Some(self.resources[position.y * self.width + position.x])
+        Some(position.y * self.width + position.x)
     }
 }
 

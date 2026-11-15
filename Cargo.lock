@@ -6147,6 +6147,8 @@ dependencies = [
  "ratatui",
  "rayon",
  "serde",
+ "slotmap",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
