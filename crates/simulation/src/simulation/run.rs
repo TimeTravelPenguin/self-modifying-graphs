@@ -1,6 +1,6 @@
 use crate::{
     field::{DiffusionError, ResourceField},
-    graph::{Graph, Uptake},
+    graph::{Graph, VertexConfig},
 };
 
 use super::{Simulation, SimulationConfig, SimulationError, SimulationSnapshot, VertexSnapshot};
@@ -67,6 +67,7 @@ pub struct SimulationView<'a> {
 
 impl SimulationRun {
     /// Creates a run with one vertex and a finite, positive, stable timestep.
+    /// Pass a [`VertexConfig`] to set the starting vertex's living cost.
     ///
     /// # Errors
     ///
@@ -80,7 +81,7 @@ impl SimulationRun {
     pub fn single_vertex_from_seed(
         config: SimulationConfig,
         seed: u32,
-        uptake: Uptake,
+        vertex_config: impl Into<VertexConfig>,
         dt: f64,
     ) -> Result<Self, SimulationError> {
         if dt == 0.0 {
@@ -90,7 +91,7 @@ impl SimulationRun {
         config
             .neighbourhood
             .diffusion_number(config.diffusion_coefficient, dt, config.spacing)?;
-        let simulation = Simulation::single_vertex_from_seed(config, seed, uptake)?;
+        let simulation = Simulation::single_vertex_from_seed(config, seed, vertex_config)?;
 
         Ok(Self {
             simulation,
@@ -102,7 +103,7 @@ impl SimulationRun {
 
     /// Completes exactly one simulation tick.
     ///
-    /// Applies diffusion and uptake before incrementing the completed tick count.
+    /// Applies diffusion, uptake, and living costs before incrementing the completed tick count.
     ///
     /// # Panics
     ///

@@ -84,23 +84,57 @@ impl Uptake {
     }
 }
 
-/// A vertex's lattice position, stored resources, and incident edges.
+/// Uptake and living cost for a vertex.
+///
+/// An [`Uptake`] value can be passed on its own to create a vertex with zero living cost.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VertexConfig {
+    uptake: Uptake,
+    living_cost: f64,
+}
+
+impl VertexConfig {
+    /// Configures uptake and the resource amount due per tick.
+    ///
+    /// Returns `None` if `living_cost` is negative or non-finite.
+    pub fn new(uptake: Uptake, living_cost: f64) -> Option<Self> {
+        if !living_cost.is_finite() || living_cost < 0.0 {
+            return None;
+        }
+
+        Some(Self {
+            uptake,
+            living_cost,
+        })
+    }
+}
+
+impl From<Uptake> for VertexConfig {
+    fn from(uptake: Uptake) -> Self {
+        Self {
+            uptake,
+            living_cost: 0.0,
+        }
+    }
+}
+
+/// A vertex's lattice position, resource balance, and incident edges.
 #[derive(Debug)]
 pub struct Vertex {
     position: Position,
     stored_resource: f64,
-    uptake: Uptake,
+    config: VertexConfig,
     /// IDs of the edges incident to this vertex.
     pub(super) incident_edges: Vec<EdgeId>,
 }
 
 impl Vertex {
     /// Creates an isolated vertex with zero stored resources.
-    pub(super) fn new(position: Position, uptake: Uptake) -> Self {
+    pub(super) fn new(position: Position, config: VertexConfig) -> Self {
         Self {
             position,
             stored_resource: 0.0,
-            uptake,
+            config,
             incident_edges: Vec::new(),
         }
     }
@@ -110,9 +144,14 @@ impl Vertex {
         self.position
     }
 
-    /// Returns how much resource the vertex retained from uptake.
+    /// Returns the vertex's current stored resource balance.
     pub fn stored_resource(&self) -> f64 {
         self.stored_resource
+    }
+
+    /// Returns the resource amount due from this vertex each tick.
+    pub fn living_cost(&self) -> f64 {
+        self.config.living_cost
     }
 
     /// Returns the incident edge IDs, with any self-loop listed once.
@@ -124,8 +163,15 @@ impl Vertex {
 
     /// Withdraws available resources and credits the efficiency-adjusted amount.
     pub(crate) fn consume(&mut self, available: &mut f64, dt: f64) {
-        let withdrawn = self.uptake.requested_amount(*available, dt).min(*available);
+        let uptake = self.config.uptake;
+        let withdrawn = uptake.requested_amount(*available, dt).min(*available);
         *available -= withdrawn;
-        self.stored_resource += self.uptake.efficiency * withdrawn;
+        self.stored_resource += uptake.efficiency * withdrawn;
+    }
+
+    /// Pays as much of the per-tick living cost as the current balance covers.
+    pub(crate) fn pay_living_cost(&mut self) {
+        let payment = self.config.living_cost.min(self.stored_resource);
+        self.stored_resource -= payment;
     }
 }

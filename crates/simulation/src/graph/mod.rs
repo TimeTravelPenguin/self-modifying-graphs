@@ -8,7 +8,7 @@ mod edges;
 mod vertices;
 
 pub use edges::{AddEdgeError, Edge, EdgeId};
-pub use vertices::{Uptake, Vertex, VertexId};
+pub use vertices::{Uptake, Vertex, VertexConfig, VertexId};
 
 /// Mutable undirected graph with at most one edge per unordered endpoint pair.
 ///
@@ -27,12 +27,12 @@ impl Graph {
         Self::default()
     }
 
-    /// Adds a vertex with zero stored resources and returns its ID.
+    /// Adds a configured vertex with zero stored resources and returns its ID.
     ///
     /// Positions are stored as supplied. Use the simulation's placement API to
     /// enforce field boundaries and cell occupancy.
-    pub fn add_vertex(&mut self, position: Position, uptake: Uptake) -> VertexId {
-        self.vertices.insert(Vertex::new(position, uptake))
+    pub fn add_vertex(&mut self, position: Position, config: impl Into<VertexConfig>) -> VertexId {
+        self.vertices.insert(Vertex::new(position, config.into()))
     }
 
     /// Removes a vertex and its incident edges, including any self-loop.

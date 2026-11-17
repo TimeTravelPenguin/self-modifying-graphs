@@ -24,7 +24,7 @@ pub struct VertexSnapshot {
     pub id: VertexId,
     /// Cell occupied by this vertex.
     pub position: Position,
-    /// Resource retained by this vertex after applying uptake efficiency.
+    /// Current resource balance after uptake and living costs.
     pub stored_resource: f64,
 }
 

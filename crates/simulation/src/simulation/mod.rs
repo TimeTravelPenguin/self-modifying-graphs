@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::{
     Position,
     field::{Diffuser, DiffusionError, ResourceField},
-    graph::{AddEdgeError, Edge, EdgeId, Graph, Uptake, Vertex, VertexId},
+    graph::{AddEdgeError, Edge, EdgeId, Graph, Vertex, VertexConfig, VertexId},
 };
 
 mod run;
@@ -71,7 +71,7 @@ pub struct SimulationConfig {
 /// A resource field and its graph, with at most one vertex per cell.
 ///
 /// Place and remove vertices through this type to keep cell occupancy and graph
-/// topology in sync. A step applies diffusion before vertex uptake.
+/// topology in sync. A step applies diffusion, vertex uptake, and living costs in order.
 pub struct Simulation {
     field: ResourceField,
     graph: Graph,
@@ -142,6 +142,7 @@ impl Simulation {
     /// Generates a seeded resource field and places one vertex in a uniformly sampled cell.
     ///
     /// The seed determines both the field and the starting position.
+    /// Pass a [`VertexConfig`] to set a living cost for the starting vertex.
     ///
     /// # Errors
     ///
@@ -153,7 +154,7 @@ impl Simulation {
     pub fn single_vertex_from_seed(
         config: SimulationConfig,
         seed: u32,
-        uptake: Uptake,
+        vertex_config: impl Into<VertexConfig>,
     ) -> Result<Self, SimulationError> {
         if config.width == 0 || config.height == 0 {
             return Err(SimulationError::EmptyGrid);
@@ -164,7 +165,7 @@ impl Simulation {
         let x = rng.random_range(0..simulation.field.width());
         let y = rng.random_range(0..simulation.field.height());
 
-        simulation.add_vertex((x, y), uptake)?;
+        simulation.add_vertex((x, y), vertex_config)?;
         Ok(simulation)
     }
 
@@ -185,6 +186,7 @@ impl Simulation {
     }
 
     /// Places a vertex with an initial balance of zero.
+    /// Pass a [`VertexConfig`] to set a living cost for this vertex.
     ///
     /// # Errors
     ///
@@ -192,7 +194,7 @@ impl Simulation {
     pub fn add_vertex(
         &mut self,
         position: impl Into<Position>,
-        uptake: Uptake,
+        config: impl Into<VertexConfig>,
     ) -> Result<VertexId, SimulationError> {
         let position = position.into();
         let index = self
@@ -204,7 +206,7 @@ impl Simulation {
             return Err(SimulationError::CellOccupied(position));
         }
 
-        let vertex_id = self.graph.add_vertex(position, uptake);
+        let vertex_id = self.graph.add_vertex(position, config);
         self.occupancy[index] = Some(vertex_id);
         Ok(vertex_id)
     }
@@ -238,11 +240,13 @@ impl Simulation {
         self.graph.remove_edge(edge_id)
     }
 
-    /// Diffuses the field, then lets each vertex consume from its home cell.
+    /// Diffuses the field, then applies uptake and living costs to each vertex.
     ///
     /// `dt` is the elapsed model time. Each vertex applies its uptake law to
     /// the cell amount after diffusion, caps withdrawal at that amount, and
-    /// stores the efficiency-adjusted share.
+    /// stores the efficiency-adjusted share before paying its living cost.
+    /// The living cost is charged once per call, including when `dt` is zero,
+    /// and the payment is capped at the vertex's stored balance.
     ///
     /// # Panics
     ///
@@ -263,13 +267,14 @@ impl Simulation {
                 .expect("vertex is in the field");
 
             vertex.consume(available, dt);
+            vertex.pay_living_cost();
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::field::Neighbourhood;
+    use crate::{field::Neighbourhood, graph::Uptake};
 
     use super::*;
 
