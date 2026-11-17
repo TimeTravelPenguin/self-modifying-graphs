@@ -62,6 +62,9 @@ Some examples for $\eta$ include:
 - $\eta$ may decrease as the number of edge connections increases, resulting in a
   similar behaviour as the previous example, except without consideration of spacial
   locality. Unlike the previous example, this case only considers _connected_ vertices.
+- $\eta$ may decrease over time, proportional to the age of the vertex. This results in
+  vertices that become less efficient over time. This may add pressure to the system if it
+  cannot support the demand of other vertices.
 
 In this simulation, we describe $U$ with saturated scaling:
 
