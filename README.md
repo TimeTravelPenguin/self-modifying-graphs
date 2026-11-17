@@ -15,7 +15,7 @@ The environment diffuses its resources over time, as described by the following 
 
 where:
 
-- $R(x, y, t)$ is the resource quantity at position (x, y) and time $t$.
+- $R(x, y, t)$ is the resource quantity at position $(x, y)$ and time $t$.
 - $D$ is the diffusion coefficient. Higher values result in faster diffusion.
 - $S(x, y, t)$ is how much resource is returned to the environment, such as through an
   external intake.
