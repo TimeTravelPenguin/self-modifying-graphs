@@ -35,7 +35,7 @@ where:
   some proportion $0 \leq r \leq 1$. Thus, an amount $(1 - r) x$ is consumed/lost as a
   cost for resource extraction.
 
-In this simulations, we describe $U$ with saturated scaling:
+In this simulation, we describe $U$ with saturated scaling:
 
 ```math
 U(x, y, t) = \min\left( R(x, y, t), \Delta t \frac{q_{\text{max}} R(x, y, t)}{K + R(x, y, t)} \right)
@@ -45,3 +45,38 @@ where $q_{\text{max}}$ is the maximum allowed extraction, and $K$ controls how m
 extracted when the resource concentration is low. $K$ is called the
 _half-saturation constant_ and is defined as the concentration of resource at which the
 extraction rate is half of the maximum extraction rate.
+
+## Acknowledgement of AI Usage
+
+AI has been used throughout this project to assist with optimisation, debugging,
+maintaining documentation, including tests, and some of the graphical-related Bevy code.
+
+AI has also been used to formalise mathematical ideas, correct or identify errors, and to
+assist with locating resources related to my ideas.
+
+All ideas are my own, and AI has been used solely as an aid to assist in research and as a
+tool to maintain a correct and optimal codebase.
+
+<table cellspacing="10">
+  <tr>
+    <td align="center" valign="middle" width="100">
+      <a href="http://0rwx.com">
+        <picture>
+          <source
+            srcset="https://raw.githubusercontent.com/NamtaoProductions/0rwx.com/refs/heads/main/static/AI-W-dark.svg"
+            media="(prefers-color-scheme: dark)">
+          <img
+            src="https://raw.githubusercontent.com/NamtaoProductions/0rwx.com/refs/heads/main/static/AI-W-light.svg"
+            alt="AI:W"
+            width="100%">
+        </picture>
+      </a>
+    </td>
+    <td>
+      <p>
+        AI was only used to fix what already existed, or to refactor work into a more scalable design.
+      </p>
+      <p>All ideas are my own.</p>
+    </td>
+  </tr>
+</table>
