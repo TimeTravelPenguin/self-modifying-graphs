@@ -1,19 +1,25 @@
+//! Bevy heatmap geometry and drawing shared by the viewer and diffusion example.
+
 use bevy::prelude::*;
 
 use crate::{Position, field::ResourceField, normalization::BoundsNormalizer};
 
+/// Catppuccin Mocha colours for general application styling.
 pub const UI_COLORS: catppuccin::FlavorColors = catppuccin::PALETTE.mocha.colors;
 
 const FONT_SIZE: f32 = 0.0;
+/// Width and height of a heatmap cell in Bevy world units.
 pub const TILE_SIZE: f32 = 6.0;
 const TILE_GAP: f32 = 0.0;
 
 /// Sprite entities in the resource field's row-major order.
 #[derive(Resource)]
 pub struct Heatmap {
+    /// One sprite entity per field cell in row-major order.
     pub tiles: Vec<Entity>,
 }
 
+/// Marks the sprite for a single heatmap cell.
 #[derive(Component)]
 pub struct Tile;
 
@@ -23,6 +29,10 @@ pub fn cell_center(field: &ResourceField, position: Position) -> Vec2 {
     Vec2::new(position.x as f32 + 0.5, position.y as f32 + 0.5) * TILE_SIZE - offset
 }
 
+/// Spawns one sprite per cell on the world XY plane and registers a [`Heatmap`] resource.
+///
+/// The grid is centred on the origin, with columns increasing towards positive X
+/// and rows increasing towards positive Y. The caller supplies initialized display bounds.
 pub fn spawn_heatmap(
     commands: &mut Commands,
     resources: &ResourceField,
@@ -67,6 +77,9 @@ pub fn spawn_heatmap(
     commands.insert_resource(Heatmap { tiles });
 }
 
+/// Refreshes the colours and labels of existing tiles from a field of the same dimensions.
+///
+/// Spawning a heatmap establishes the mapping from field cells to tile entities.
 pub fn redraw_heatmap(
     heatmap: &Heatmap,
     resources: &ResourceField,
@@ -118,6 +131,7 @@ fn contrasting_text_color(background: Color) -> Color {
     }
 }
 
+/// Returns the resource colour at a normalized value clamped to `[0, 1]`.
 pub fn heatmap_color(t: f32) -> Color {
     const MIN: Color = Color::linear_rgb(35.0 / 255.0, 55.0 / 255.0, 140.0 / 255.0);
     const MID: Color = Color::linear_rgb(37.0 / 255.0, 173.0 / 255.0, 154.0 / 255.0);

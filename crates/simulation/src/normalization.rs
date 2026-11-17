@@ -1,19 +1,21 @@
+//! Display scaling based on observed resource bounds.
+
 use bevy::{ecs::resource::Resource, reflect::Reflect};
 
 use crate::field::ResourceField;
 
+/// Controls how newly observed field extrema update the display bounds.
 #[derive(Debug, Reflect, Default, Clone, Copy, PartialEq)]
 pub enum BoundsAveraging {
-    /// No averaging.
+    /// Uses the minimum and maximum of the most recent observation.
     #[default]
     None,
 
-    /// Exponential moving average.
-    ///
-    /// `tau` is the smoothing time constant, measured in simulation time units.
-    /// That it is, the bounds will be smoothed over a time window of
-    /// approximately `tau` simulation time units.
-    EMA { tau: f64 },
+    /// Smooths the minimum and maximum independently with an exponential moving average.
+    EMA {
+        /// The finite, positive smoothing time constant in the same units as the elapsed time.
+        tau: f64,
+    },
 }
 
 impl BoundsAveraging {
@@ -27,6 +29,7 @@ impl BoundsAveraging {
     }
 }
 
+/// Tracks the field bounds used to map resource amounts to a display range of `0` to `1`.
 #[derive(Debug, Resource, Reflect, Clone, PartialEq)]
 pub struct BoundsNormalizer {
     averaging: BoundsAveraging,
@@ -40,6 +43,11 @@ impl Default for BoundsNormalizer {
 }
 
 impl BoundsNormalizer {
+    /// Creates a normalizer with the given averaging method and no observations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if exponential averaging uses a non-finite or non-positive time constant.
     pub fn new(averaging: BoundsAveraging) -> Self {
         averaging.validate();
 
@@ -49,16 +57,22 @@ impl BoundsNormalizer {
         }
     }
 
+    /// Returns the averaging method used for each new observation.
     pub fn method(&self) -> BoundsAveraging {
         self.averaging
     }
 
-    /// Returns the current minimum and maximum, if a nonempty field has been observed since reset.
+    /// Returns the effective minimum and maximum, including any averaging.
+    ///
+    /// Returns `None` until a nonempty field is observed after construction or reset.
     pub fn bounds(&self) -> Option<(f64, f64)> {
         self.bounds
     }
 
-    /// Maps a value to `[0, 1]`, using the midpoint when it cannot be normalized.
+    /// Maps a value to `[0, 1]` between the observed bounds and clamps values outside them.
+    ///
+    /// Returns `0.5` when bounds are absent, the value or span is non-finite,
+    /// or the span is at most `1e-12`.
     pub fn normalize(&self, value: f64) -> f32 {
         let Some((min, max)) = self.bounds else {
             return 0.5;
@@ -73,6 +87,11 @@ impl BoundsNormalizer {
         ((value - min) / range).clamp(0.0, 1.0) as f32
     }
 
+    /// Sets the averaging method and discards the previously observed bounds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if exponential averaging uses a non-finite or non-positive time constant.
     pub fn set_bounds_averaging(mut self, averaging: BoundsAveraging) -> Self {
         averaging.validate();
         self.averaging = averaging;
@@ -81,10 +100,19 @@ impl BoundsNormalizer {
         self
     }
 
+    /// Discards the current bounds so the next observation can initialize them.
     pub fn reset_bounds(&mut self) {
         self.bounds = None;
     }
 
+    /// Observes the field minimum and maximum after `dt` units of model time.
+    ///
+    /// An empty field clears the bounds. The first nonempty observation sets
+    /// both bounds directly. Later observations use the configured averaging method.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `dt` is non-finite or negative, or if any field amount is non-finite.
     pub fn update_bounds(&mut self, field: &ResourceField, dt: f64) {
         assert!(
             dt.is_finite() && dt >= 0.0,

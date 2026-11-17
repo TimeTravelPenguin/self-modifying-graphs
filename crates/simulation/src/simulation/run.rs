@@ -6,6 +6,44 @@ use crate::{
 use super::{Simulation, SimulationConfig, SimulationError, SimulationSnapshot, VertexSnapshot};
 
 /// A seeded simulation driven one fixed timestep at a time.
+///
+/// Publish tick zero to make the initial field available before stepping. A
+/// reader can keep that snapshot while the run advances.
+///
+/// # Examples
+///
+/// ```no_run,standalone_crate
+/// use simulation::{
+///     field::Neighbourhood,
+///     graph::Uptake,
+///     simulation::{SimulationConfig, SimulationRun, SnapshotPublisher},
+/// };
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = SimulationConfig {
+///     width: 8,
+///     height: 6,
+///     spacing: 1.0,
+///     initial_resource: 100.0,
+///     resource_noise_scale: 10.0,
+///     diffusion_coefficient: 0.8,
+///     neighbourhood: Neighbourhood::Moore,
+/// };
+///
+/// let uptake = Uptake::new(1.0, 0.8).unwrap();
+/// let mut run = SimulationRun::single_vertex_from_seed(config, 42, uptake, 0.1)?;
+/// let mut publisher = SnapshotPublisher::new(run.snapshot());
+/// let reader = publisher.reader();
+/// let initial = reader.latest();
+///
+/// run.advance();
+/// publisher.publish(run.snapshot());
+///
+/// assert_eq!(initial.tick, 0);
+/// assert_eq!(reader.latest().tick, 1);
+/// # Ok(())
+/// # }
+/// ```
 pub struct SimulationRun {
     simulation: Simulation,
     seed: u32,
@@ -13,22 +51,32 @@ pub struct SimulationRun {
     tick: u64,
 }
 
-/// The state of a run after the indicated number of completed ticks.
+/// A borrowed view of a run at its most recent completed tick.
 pub struct SimulationView<'a> {
+    /// Seed used to generate the field and choose the initial vertex position.
     pub seed: u32,
+    /// Number of completed ticks, starting at zero.
     pub tick: u64,
+    /// Elapsed model time, calculated as the completed tick count times the timestep.
     pub simulation_time: f64,
+    /// Resource field at this tick.
     pub field: &'a ResourceField,
+    /// Graph at this tick, including current vertex balances.
     pub graph: &'a Graph,
 }
 
 impl SimulationRun {
     /// Creates a run with one vertex and a finite, positive, stable timestep.
     ///
+    /// # Errors
+    ///
+    /// Returns [`SimulationError::Diffusion`] for invalid or unstable diffusion
+    /// settings, including a non-positive timestep, and
+    /// [`SimulationError::EmptyGrid`] if either field dimension is zero.
+    ///
     /// # Panics
     ///
-    /// Panics if the resource noise scale is non-positive or non-finite, or if
-    /// the initial resource amount is negative or non-finite.
+    /// Panics on invalid field settings as in [`ResourceField::new_random`].
     pub fn single_vertex_from_seed(
         config: SimulationConfig,
         seed: u32,
@@ -53,6 +101,12 @@ impl SimulationRun {
     }
 
     /// Completes exactly one simulation tick.
+    ///
+    /// Applies diffusion and uptake before incrementing the completed tick count.
+    ///
+    /// # Panics
+    ///
+    /// Panics before stepping if the tick count would overflow.
     pub fn advance(&mut self) {
         let next_tick = self.tick.checked_add(1).expect("simulation tick overflow");
         self.simulation.step(self.dt);
@@ -71,6 +125,9 @@ impl SimulationRun {
     }
 
     /// Copies the completed tick into an owned snapshot that can outlive the run's next tick.
+    ///
+    /// Copies resource amounts and vertex state. The borrowed [`Self::view`]
+    /// also provides access to the graph's edges.
     pub fn snapshot(&self) -> SimulationSnapshot {
         let view = self.view();
         let vertices = view

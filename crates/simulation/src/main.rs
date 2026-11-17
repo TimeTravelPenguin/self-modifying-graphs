@@ -1,3 +1,8 @@
+//! Bevy viewer for a seeded single-vertex simulation.
+//!
+//! Every launch starts a new run and prints its seed. The simulation worker owns
+//! the model and its clock, and the viewer draws completed snapshots.
+
 use std::{error::Error, io, time::Duration};
 
 use bevy::{prelude::*, window::WindowResizeConstraints};

@@ -1,3 +1,5 @@
+//! Wall-clock pacing and shutdown for the viewer's simulation worker.
+
 use std::{
     io,
     sync::mpsc::{self, RecvTimeoutError, Sender},
@@ -7,6 +9,7 @@ use std::{
 
 use simulation::simulation::{SimulationRun, SnapshotPublisher, SnapshotReader};
 
+/// Owns the stepping thread and joins it when stopped or dropped.
 pub(super) struct SimulationWorker {
     reader: SnapshotReader,
     stop_sender: Sender<()>,
@@ -14,6 +17,13 @@ pub(super) struct SimulationWorker {
 }
 
 impl SimulationWorker {
+    /// Publishes the current tick and starts advancing the model on a wall-clock interval.
+    ///
+    /// The interval sets the pacing. Each tick advances by the run's model timestep.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a zero interval or if the worker thread cannot start.
     pub(super) fn start(mut run: SimulationRun, interval: Duration) -> io::Result<Self> {
         if interval.is_zero() {
             return Err(io::Error::new(
@@ -46,10 +56,14 @@ impl SimulationWorker {
         })
     }
 
+    /// Returns a reader for the latest completed snapshot.
     pub(super) fn reader(&self) -> SnapshotReader {
         self.reader.clone()
     }
 
+    /// Interrupts the wait for the next tick and joins the worker.
+    ///
+    /// A tick already in progress can finish. A worker panic is returned to the caller.
     pub(super) fn stop(mut self) -> thread::Result<()> {
         self.stop_and_join()
     }

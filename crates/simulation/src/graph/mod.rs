@@ -1,3 +1,5 @@
+//! Undirected topology and resource uptake state for lattice vertices.
+
 use slotmap::DenseSlotMap;
 
 use crate::Position;
@@ -8,10 +10,11 @@ mod vertices;
 pub use edges::{AddEdgeError, Edge, EdgeId};
 pub use vertices::{Uptake, Vertex, VertexId};
 
-/// Mutable undirected graph with one edge per unordered endpoint pair.
+/// Mutable undirected graph with at most one edge per unordered endpoint pair.
 ///
-/// Vertex and edge IDs belong to the graph that issued them. Placement rules
-/// for the resource field are enforced by the simulation.
+/// Vertex and edge IDs belong to the graph that issued them and remain valid
+/// until their entries are removed. The simulation enforces placement rules
+/// for the resource field.
 #[derive(Debug, Default)]
 pub struct Graph {
     vertices: DenseSlotMap<VertexId, Vertex>,
@@ -19,14 +22,23 @@ pub struct Graph {
 }
 
 impl Graph {
+    /// Creates an empty graph.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Adds a vertex with zero stored resources and returns its ID.
+    ///
+    /// Positions are stored as supplied. Use the simulation's placement API to
+    /// enforce field boundaries and cell occupancy.
     pub fn add_vertex(&mut self, position: Position, uptake: Uptake) -> VertexId {
         self.vertices.insert(Vertex::new(position, uptake))
     }
 
+    /// Removes a vertex and its incident edges, including any self-loop.
+    ///
+    /// Returns the vertex with an empty incident edge list, or `None` if the
+    /// ID has no live entry in this graph.
     pub fn remove_vertex(&mut self, vertex_id: VertexId) -> Option<Vertex> {
         let mut vertex = self.vertices.remove(vertex_id)?;
 
@@ -37,18 +49,31 @@ impl Graph {
         Some(vertex)
     }
 
+    /// Looks up a live vertex by its ID.
     pub fn vertex(&self, vertex_id: VertexId) -> Option<&Vertex> {
         self.vertices.get(vertex_id)
     }
 
+    /// Iterates over live vertices and their IDs in unspecified order.
     pub fn vertices(&self) -> impl Iterator<Item = (VertexId, &Vertex)> {
         self.vertices.iter()
     }
 
+    /// Iterates mutably over live vertices for an in-place simulation step.
     pub(crate) fn vertices_mut(&mut self) -> impl Iterator<Item = &mut Vertex> {
         self.vertices.values_mut()
     }
 
+    /// Inserts an undirected edge between two live vertices.
+    ///
+    /// Passing the same ID twice creates a self-loop. It is listed once on
+    /// that vertex.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AddEdgeError::UnknownVertex`] if either endpoint is absent,
+    /// or [`AddEdgeError::DuplicateEdge`] if the unordered pair already has
+    /// an edge.
     pub fn add_edge(&mut self, from: VertexId, to: VertexId) -> Result<EdgeId, AddEdgeError> {
         let from_vertex = self
             .vertices
@@ -76,6 +101,9 @@ impl Graph {
         Ok(edge_id)
     }
 
+    /// Finds the edge joining two vertices in either endpoint order.
+    ///
+    /// Returns `None` if either vertex is absent or the pair has no edge.
     pub fn edge_between(&self, from: VertexId, to: VertexId) -> Option<EdgeId> {
         let from_vertex = self.vertices.get(from)?;
         let to_vertex = self.vertices.get(to)?;
@@ -102,14 +130,19 @@ impl Graph {
         })
     }
 
+    /// Looks up a live edge by its ID.
     pub fn edge(&self, edge_id: EdgeId) -> Option<&Edge> {
         self.edges.get(edge_id)
     }
 
+    /// Iterates over live edges and their IDs in unspecified order.
     pub fn edges(&self) -> impl Iterator<Item = (EdgeId, &Edge)> {
         self.edges.iter()
     }
 
+    /// Removes the edge and unlinks it from its endpoint lists.
+    ///
+    /// Returns the removed edge, or `None` if the ID has no live entry.
     pub fn remove_edge(&mut self, edge_id: EdgeId) -> Option<Edge> {
         let edge = self.edges.remove(edge_id)?;
         let [from, to] = edge.endpoints;

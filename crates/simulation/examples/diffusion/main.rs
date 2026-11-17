@@ -1,3 +1,8 @@
+//! Interactive resource diffusion example driven by [`simulation::SimulationPlugin`].
+//!
+//! Press Space to switch between stencils. Press R to reseed the field and reset
+//! its display bounds.
+
 use std::time::Duration;
 
 use bevy::prelude::*;
@@ -34,6 +39,7 @@ fn main() -> AppExit {
     app.run()
 }
 
+/// Shares the same simulation settings between the window and the headless test.
 fn configure_simulation(app: &mut App, width: u32, height: u32) {
     let mut plugin = SimulationPlugin::default()
         .with_dimensions(width, height)

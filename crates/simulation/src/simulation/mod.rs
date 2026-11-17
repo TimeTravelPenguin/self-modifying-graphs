@@ -1,4 +1,4 @@
-//! Owns the field and graph and advances them one simulation tick at a time.
+//! Resource-field and graph evolution, seeded runs, and snapshot publication.
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use thiserror::Error;
@@ -16,43 +16,62 @@ pub use crate::normalization as bounds;
 pub use run::{SimulationRun, SimulationView};
 pub use snapshot::{SimulationSnapshot, SnapshotPublisher, SnapshotReader, VertexSnapshot};
 
+/// Re-exports of the field diffusion solver and its stencils.
 pub mod diffusion {
     pub use crate::field::{Diffuser, Neighbourhood};
 }
 
+/// Re-export of the resource field type.
 pub mod resources {
     pub use crate::field::ResourceField;
 }
 
+/// Errors from placing vertices, connecting a graph, or configuring a run.
 #[derive(Debug, Error)]
 pub enum SimulationError {
+    /// A seeded run requires a cell for its first vertex.
     #[error("a starting vertex requires a grid with positive width and height")]
     EmptyGrid,
 
+    /// The requested vertex position lies outside the field.
     #[error("position ({}, {}) is outside the field", .0.x, .0.y)]
     VertexOutOfBounds(Position),
 
+    /// The requested cell already contains a vertex.
     #[error("position ({}, {}) is occupied", .0.x, .0.y)]
     CellOccupied(Position),
 
+    /// The graph rejected an edge insertion.
     #[error(transparent)]
     AddEdge(#[from] AddEdgeError),
 
+    /// The configured timestep or diffusion settings are invalid.
     #[error(transparent)]
     Diffusion(#[from] DiffusionError),
 }
 
+/// Settings for generating a seeded field and configuring its diffuser.
 pub struct SimulationConfig {
+    /// Number of columns along the x-axis.
     pub width: u32,
+    /// Number of rows along the y-axis.
     pub height: u32,
+    /// Physical distance between adjacent cell centres.
     pub spacing: f64,
+    /// Upper bound on the initial resource amount in each cell.
     pub initial_resource: f64,
     /// Perlin noise scale in grid cells.
     pub resource_noise_scale: f64,
+    /// Diffusion rate in squared distance per unit of model time.
     pub diffusion_coefficient: f64,
+    /// Stencil used to exchange resource between cells.
     pub neighbourhood: diffusion::Neighbourhood,
 }
 
+/// A resource field and its graph, with at most one vertex per cell.
+///
+/// Place and remove vertices through this type to keep cell occupancy and graph
+/// topology in sync. A step applies diffusion before vertex uptake.
 pub struct Simulation {
     field: ResourceField,
     graph: Graph,
@@ -97,6 +116,11 @@ impl Simulation {
     }
 
     /// Generates a seeded resource field and starts with an empty graph.
+    ///
+    /// # Panics
+    ///
+    /// Panics on invalid field or diffusion settings. See
+    /// [`ResourceField::new_random`] and [`Simulation::new`].
     pub fn from_seed(config: SimulationConfig, seed: u32) -> Self {
         let field = ResourceField::new_random(
             config.height,
@@ -116,6 +140,16 @@ impl Simulation {
     }
 
     /// Generates a seeded resource field and places one vertex in a uniformly sampled cell.
+    ///
+    /// The seed determines both the field and the starting position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SimulationError::EmptyGrid`] if either dimension is zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics on invalid field or diffusion settings as in [`Self::from_seed`].
     pub fn single_vertex_from_seed(
         config: SimulationConfig,
         seed: u32,
@@ -134,19 +168,27 @@ impl Simulation {
         Ok(simulation)
     }
 
+    /// Borrows the current resource field.
     pub fn field(&self) -> &ResourceField {
         &self.field
     }
 
+    /// Borrows the current graph, including vertex balances and edges.
     pub fn graph(&self) -> &Graph {
         &self.graph
     }
 
+    /// Finds the vertex at a cell, if the cell is within the field and occupied.
     pub fn vertex_at(&self, position: impl Into<Position>) -> Option<VertexId> {
         let index = self.field.cell_index(position.into())?;
         self.occupancy[index]
     }
 
+    /// Places a vertex with an initial balance of zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the requested cell is outside the field or occupied.
     pub fn add_vertex(
         &mut self,
         position: impl Into<Position>,
@@ -167,6 +209,9 @@ impl Simulation {
         Ok(vertex_id)
     }
 
+    /// Removes a vertex and its incident edges, freeing its cell for placement.
+    ///
+    /// Returns `None` if the vertex ID is stale or absent from the graph.
     pub fn remove_vertex(&mut self, vertex_id: VertexId) -> Option<Vertex> {
         let vertex = self.graph.remove_vertex(vertex_id)?;
         let index = self
@@ -178,15 +223,25 @@ impl Simulation {
         Some(vertex)
     }
 
+    /// Adds an undirected edge between two vertices in this simulation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SimulationError::AddEdge`] if an endpoint is absent or the
+    /// endpoint pair already has an edge.
     pub fn add_edge(&mut self, from: VertexId, to: VertexId) -> Result<EdgeId, SimulationError> {
         self.graph.add_edge(from, to).map_err(Into::into)
     }
 
+    /// Removes an edge by ID, if it exists.
     pub fn remove_edge(&mut self, edge_id: EdgeId) -> Option<Edge> {
         self.graph.remove_edge(edge_id)
     }
 
     /// Diffuses the field, then lets each vertex consume from its home cell.
+    ///
+    /// `dt` is the elapsed model time. Each vertex withdraws at most its
+    /// uptake rate times `dt` and stores the efficiency-adjusted amount.
     ///
     /// # Panics
     ///

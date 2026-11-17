@@ -7,32 +7,45 @@ use thiserror::Error;
 
 use super::ResourceField;
 
+/// A parameter error reported when validating a diffusion step.
 #[derive(Debug, Error)]
 pub enum DiffusionError {
+    /// The supplied diffusion coefficient is non-finite or negative.
     #[error("invalid diffusion coefficient {0}")]
     InvalidCoefficient(f64),
 
+    /// The supplied timestep is non-finite or outside the caller's allowed range.
     #[error("invalid diffusion timestep {0}")]
     InvalidTimestep(f64),
 
+    /// The supplied cell spacing is non-finite or non-positive.
     #[error("invalid diffusion spacing {0}")]
     InvalidSpacing(f64),
 
+    /// The dimensionless diffusion number is non-finite or exceeds the stencil's limit.
     #[error("diffusion number {diffusion_number} must be finite and at most {limit}")]
-    UnstableTimestep { diffusion_number: f64, limit: f64 },
+    UnstableTimestep {
+        /// The computed value of `diffusion_coefficient * dt / spacing²`.
+        diffusion_number: f64,
+
+        /// The maximum value allowed for the selected stencil.
+        limit: f64,
+    },
 }
 
+/// The stencil used to exchange resource between cells.
 #[derive(Debug, Reflect, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Neighbourhood {
-    /// 5-point Laplacian: 4 cardinal neighbours.
+    /// Five-point Laplacian with four cardinal neighbours.
     #[default]
     VonNeumann,
 
-    /// 9-point Laplacian: 4 cardinal + 4 diagonal neighbours.
+    /// Nine-point Laplacian with four cardinal and four diagonal neighbours.
     Moore,
 }
 
 impl Neighbourhood {
+    /// Validates the parameters and returns the dimensionless diffusion number.
     pub(crate) fn diffusion_number(
         self,
         diffusion_coefficient: f64,
@@ -68,6 +81,7 @@ impl Neighbourhood {
     }
 }
 
+/// An explicit diffusion solver with a reusable buffer and no-flux boundaries.
 #[derive(Debug, Resource, Reflect, Default, Clone, PartialEq)]
 pub struct Diffuser {
     neighbourhood: Neighbourhood,
@@ -75,6 +89,7 @@ pub struct Diffuser {
 }
 
 impl Diffuser {
+    /// Creates a solver that uses the given stencil.
     pub fn new(neighbourhood: Neighbourhood) -> Self {
         Self {
             neighbourhood,
@@ -82,14 +97,28 @@ impl Diffuser {
         }
     }
 
+    /// Returns the stencil selected for the next step.
     pub fn neighbourhood(&self) -> Neighbourhood {
         self.neighbourhood
     }
 
+    /// Selects the stencil for future steps and retains the reusable buffer.
     pub fn set_neighbourhood(&mut self, neighbourhood: Neighbourhood) {
         self.neighbourhood = neighbourhood;
     }
 
+    /// Applies one diffusion step to the field, with zero flux across its outer edges.
+    ///
+    /// The diffusion number is `diffusion_coefficient * dt / spacing²`. Its
+    /// maximum is `0.25` for [`Neighbourhood::VonNeumann`] and `0.30` for
+    /// [`Neighbourhood::Moore`]. A zero diffusion number or an empty field
+    /// produces no update.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the diffusion coefficient or `dt` is non-finite or negative,
+    /// if spacing is non-finite or non-positive, or if the diffusion number
+    /// is non-finite or exceeds the selected stencil's limit.
     pub fn diffuse(
         &mut self,
         field: &mut ResourceField,

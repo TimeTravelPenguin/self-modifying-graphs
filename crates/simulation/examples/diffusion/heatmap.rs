@@ -1,3 +1,5 @@
+//! Updates the shared heatmap from the example's Bevy resources.
+
 use bevy::prelude::*;
 use simulation::{
     field::ResourceField,

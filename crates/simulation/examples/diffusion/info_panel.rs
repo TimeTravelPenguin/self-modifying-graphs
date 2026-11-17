@@ -1,3 +1,5 @@
+//! Displays the active diffusion settings and normalization bounds.
+
 use bevy::prelude::*;
 use simulation::{
     DiffusionConfig, SimulationTime, normalization::BoundsNormalizer, rendering::UI_COLORS,

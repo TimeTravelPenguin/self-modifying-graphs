@@ -1,3 +1,5 @@
+//! Bevy presentation of completed simulation snapshots.
+
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::prelude::*;
@@ -23,6 +25,7 @@ struct VertexMarker;
 #[derive(Component)]
 struct RunStatus;
 
+/// Draws the initial snapshot on startup and refreshes the display when the tick changes.
 pub(super) fn configure(app: &mut App, reader: SnapshotReader) {
     app.insert_resource(ClearColor(UI_COLORS.base.into()))
         .insert_resource(SnapshotView {
