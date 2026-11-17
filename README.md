@@ -8,8 +8,36 @@ This is a personal research project that looks at how graphs can evolve within a
 environment, subject to constraints.
 
 Graph vertices lie on a lattice. At each timestep, each node collects some amount of
-resources from the environment. The amount collected is proportional to how much is
-currently located at that vertex.
+resources from the environment. The environment spreads resources out across the space.
+Vertices may spawn new, neighbouring vertices with a connecting edge, or even connect an
+edge to nearby vertices that it does not share an edge with. Edges may also be dropped.
+
+The goal of this simulation is to explore the behaviour of graphs that attempt to optimise
+themselves to an environment, constrained by some set of rules.
+
+After completing the implementation of the basic simulation, the project will be extended
+to add genetic, selection-based evolution to produce graphs through genome rules.
+
+## Understanding The Simulation
+
+The simulation can loosely be thought of as a seed in nature. Planted in nutrient-rich
+soil, a seed will grow and spawn children. In this analogy, the children are new seeds
+that are connected to the roots of the parent. Thus, the parent is able to provide
+resources to the seed, while the seed is also able to collect its own resources.
+
+If a seed or parent finds itself in a region that is nutrient-poor, it may survive and
+reproduce if it is provided enough energy from its parent and other connected neighbours.
+
+As new seeds are spawned, it may become too costly to pass energy through several
+neighbours, and so new connections may be created to shortcut long paths. Additionally, if
+a path eventually sees less traffic, it may be removed to conserve energy.
+
+This is a simple system of dynamics that involves collecting and searching for resources
+while maintaining as many vertices (seeds/plants/etc.) as possible.
+
+Once this concept is more deeply explored, probabilistic or heuristic rules may be
+replaced with genomes to dictate behaviour. It may also be possible to allow for several
+species to compete—though this is not something that is yet being considered.
 
 ## Simulation Details
 
