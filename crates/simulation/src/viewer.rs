@@ -1,16 +1,26 @@
 //! Bevy presentation of completed simulation snapshots.
 
-use std::f32::consts::FRAC_PI_4;
+use std::{
+    collections::HashMap,
+    f32::consts::{FRAC_1_SQRT_2, FRAC_PI_4},
+    sync::Arc,
+};
 
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite::SpriteAlphaMode, window::PrimaryWindow};
 use simulation::{
+    Position,
+    graph::VertexId,
     normalization::{BoundsAveraging, BoundsNormalizer},
-    rendering::{
-        Heatmap, TILE_SIZE, Tile, UI_COLORS, cell_center, heatmap_color, redraw_heatmap,
-        spawn_heatmap,
-    },
+    rendering::{Heatmap, TILE_SIZE, Tile, UI_COLORS, cell_center, redraw_heatmap, spawn_heatmap},
     simulation::{SimulationSnapshot, SnapshotReader},
 };
+
+mod layout;
+mod ui;
+
+use layout::{FieldView, ViewerLayout};
+
+const MARKER_SIZE: f32 = TILE_SIZE * 1.9;
 
 /// Draws completed snapshots from the app's [`SnapshotReader`] resource.
 pub(super) struct ViewerPlugin {
@@ -31,104 +41,90 @@ impl Plugin for ViewerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ClearColor(UI_COLORS.base.into()))
             .insert_resource(SnapshotView {
-                displayed_tick: 0,
-                displayed_time: 0.0,
-                field_seed: 0,
+                displayed: None,
+                selected: None,
                 bounds: self.bounds_normalizer.clone(),
             })
+            .init_resource::<Viewport>()
             .add_systems(Startup, setup)
-            .add_systems(Update, refresh);
+            .add_systems(
+                Update,
+                (
+                    refresh_snapshot,
+                    update_layout,
+                    select_vertex,
+                    update_display,
+                )
+                    .chain(),
+            );
     }
 }
 
 #[derive(Resource)]
 struct SnapshotView {
-    displayed_tick: u64,
-    displayed_time: f64,
-    field_seed: u32,
+    displayed: Option<Arc<SimulationSnapshot>>,
+    selected: Option<VertexId>,
     bounds: BoundsNormalizer,
 }
 
-#[derive(Component)]
-struct VertexMarker;
-
-#[derive(Component)]
-struct RunStatus;
-
-#[derive(Component)]
-enum LegendBound {
-    Minimum,
-    Maximum,
+#[derive(Resource, Default)]
+struct Viewport {
+    window_size: Option<Vec2>,
+    field: Option<FieldView>,
 }
 
-impl LegendBound {
-    fn text(&self, (min, max): (f64, f64)) -> Text {
-        match self {
-            Self::Minimum => Text::new(format!("Cell resource    {min:.1}")),
-            Self::Maximum => Text::new(format!("{max:.1}")),
-        }
-    }
-}
+#[derive(Component)]
+struct FieldCamera;
+
+#[derive(Component)]
+struct VertexMarker(VertexId);
 
 fn setup(mut commands: Commands, reader: Res<SnapshotReader>, mut view: ResMut<SnapshotView>) {
     let snapshot = reader.latest();
     view.bounds.reset_bounds();
     view.bounds.update_bounds(&snapshot.field, 0.0);
-    view.displayed_tick = snapshot.tick;
-    view.displayed_time = snapshot.simulation_time;
-    view.field_seed = snapshot.field_seed;
 
-    commands.spawn(Camera2d);
+    commands.spawn((Camera2d, FieldCamera));
     spawn_heatmap(&mut commands, &snapshot.field, &view.bounds);
 
-    let vertex = snapshot.vertices.first().expect("starting vertex exists");
-    let position = cell_center(&snapshot.field, vertex.position);
-    commands
-        .spawn((
-            VertexMarker,
-            Sprite::from_color(UI_COLORS.crust, Vec2::splat(TILE_SIZE * 1.9)),
-            Transform::from_xyz(position.x, position.y, 1.0)
-                .with_rotation(Quat::from_rotation_z(FRAC_PI_4)),
-        ))
-        .with_child((
-            Sprite::from_color(UI_COLORS.rosewater, Vec2::splat(TILE_SIZE * 1.25)),
-            Transform::from_xyz(0.0, 0.0, 0.1),
-        ));
+    for vertex in &snapshot.vertices {
+        let center = cell_center(&snapshot.field, vertex.position);
+        spawn_marker(&mut commands, vertex.id, center);
+    }
 
-    spawn_header(&mut commands, &snapshot);
-    spawn_legend(&mut commands, &view.bounds);
+    ui::spawn(&mut commands, &snapshot, view.bounds.bounds().unwrap());
+    view.displayed = Some(snapshot);
 }
 
-fn refresh(
+fn refresh_snapshot(
+    mut commands: Commands,
     reader: Res<SnapshotReader>,
     mut view: ResMut<SnapshotView>,
     heatmap: Res<Heatmap>,
     mut tiles: Query<(&mut Sprite, Option<&Children>), With<Tile>>,
     mut labels: Query<(&mut Text2d, &mut TextColor)>,
-    mut marker: Single<&mut Transform, With<VertexMarker>>,
-    mut status: Single<&mut Text, With<RunStatus>>,
-    mut legend: Query<(&LegendBound, &mut Text), Without<RunStatus>>,
+    mut markers: Query<(Entity, &VertexMarker, &mut Transform)>,
+    mut positions: Local<HashMap<VertexId, Position>>,
 ) {
     let snapshot = reader.latest();
-    let reseeded = snapshot.field_seed != view.field_seed;
+    let previous = view
+        .displayed
+        .as_ref()
+        .expect("viewer setup loaded a snapshot");
 
-    if snapshot.tick == view.displayed_tick && !reseeded {
+    if Arc::ptr_eq(previous, &snapshot) {
         return;
     }
+
+    let reseeded = previous.field_seed != snapshot.field_seed;
+    let elapsed = snapshot.simulation_time - previous.simulation_time;
 
     if reseeded {
         view.bounds.reset_bounds();
     }
 
     if reseeded || matches!(view.bounds.method(), BoundsAveraging::EMA { .. }) {
-        let elapsed = snapshot.simulation_time - view.displayed_time;
         view.bounds.update_bounds(&snapshot.field, elapsed);
-
-        let bounds = view.bounds.bounds().expect("simulation field is nonempty");
-
-        for (bound, mut label) in &mut legend {
-            label.set_if_neq(bound.text(bounds));
-        }
     }
 
     redraw_heatmap(
@@ -139,255 +135,189 @@ fn refresh(
         &mut labels,
     );
 
-    let vertex = snapshot.vertices.first().expect("starting vertex exists");
-    let position = cell_center(&snapshot.field, vertex.position);
-    marker.translation = position.extend(1.0);
-    status.set_if_neq(Text::new(status_text(&snapshot)));
-    view.displayed_tick = snapshot.tick;
-    view.displayed_time = snapshot.simulation_time;
-    view.field_seed = snapshot.field_seed;
+    positions.extend(
+        snapshot
+            .vertices
+            .iter()
+            .map(|vertex| (vertex.id, vertex.position)),
+    );
+
+    if view.selected.is_some_and(|id| !positions.contains_key(&id)) {
+        view.selected = None;
+    }
+
+    for (entity, marker, mut transform) in &mut markers {
+        if let Some(position) = positions.remove(&marker.0) {
+            let translation =
+                cell_center(&snapshot.field, position).extend(transform.translation.z);
+
+            if transform.translation != translation {
+                transform.translation = translation;
+            }
+        } else {
+            commands.entity(entity).despawn();
+        }
+    }
+
+    for (id, position) in positions.drain() {
+        let center = cell_center(&snapshot.field, position);
+        spawn_marker(&mut commands, id, center);
+    }
+
+    view.displayed = Some(snapshot);
 }
 
-fn spawn_header(commands: &mut Commands, snapshot: &SimulationSnapshot) {
+fn spawn_marker(commands: &mut Commands, id: VertexId, center: Vec2) {
     commands
         .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(0.0),
-                right: px(0.0),
-                top: px(0.0),
-                height: px(60.0),
-                padding: UiRect::horizontal(px(24.0)),
-                align_items: AlignItems::Center,
-                align_content: AlignContent::Center,
-                justify_content: JustifyContent::SpaceBetween,
-                flex_wrap: FlexWrap::Wrap,
-                row_gap: px(4.0),
-                column_gap: px(16.0),
-                ..default()
+            VertexMarker(id),
+            Sprite {
+                alpha_mode: SpriteAlphaMode::Opaque,
+                ..Sprite::from_color(UI_COLORS.crust, Vec2::splat(MARKER_SIZE))
             },
-            BackgroundColor(UI_COLORS.surface0.into()),
+            Transform::from_translation(center.extend(1.0))
+                .with_rotation(Quat::from_rotation_z(FRAC_PI_4)),
         ))
-        .with_children(|header| {
-            header.spawn((
-                Text::new("Graph simulation"),
-                TextFont::from_font_size(21.0),
-                TextColor(UI_COLORS.text.into()),
-            ));
-            header.spawn((
-                RunStatus,
-                Text::new(status_text(snapshot)),
-                TextFont::from_font_size(15.0),
-                TextColor(UI_COLORS.subtext1.into()),
-            ));
-        });
+        .with_child((
+            Sprite {
+                alpha_mode: SpriteAlphaMode::Opaque,
+                ..Sprite::from_color(UI_COLORS.rosewater, Vec2::splat(TILE_SIZE * 1.25))
+            },
+            Transform::from_xyz(0.0, 0.0, 0.1),
+        ));
 }
 
-fn status_text(snapshot: &SimulationSnapshot) -> String {
-    let vertex = snapshot.vertices.first().expect("starting vertex exists");
+fn update_layout(
+    window: Query<&Window, With<PrimaryWindow>>,
+    view: Res<SnapshotView>,
+    mut viewport: ResMut<Viewport>,
+    camera: Single<(&mut Projection, &mut Transform), With<FieldCamera>>,
+    mut regions: Query<(&ui::UiRegion, &mut Node)>,
+) {
+    let Ok(window) = window.single() else {
+        return;
+    };
 
-    format!(
-        "Seed {}  |  Tick {}  |  Time {:.1}  |  Stored resource {:.2}",
-        snapshot.seed, snapshot.tick, snapshot.simulation_time, vertex.stored_resource
-    )
+    let size = window.size();
+
+    if viewport.window_size == Some(size) {
+        return;
+    }
+
+    let snapshot = view
+        .displayed
+        .as_ref()
+        .expect("viewer setup loaded a snapshot");
+    let layout = ViewerLayout::new(size);
+    let grid_size = Vec2::new(
+        snapshot.field.width() as f32,
+        snapshot.field.height() as f32,
+    ) * TILE_SIZE;
+    viewport.window_size = Some(size);
+    viewport.field = layout.fit_field(grid_size);
+    ui::apply_layout(&layout, &mut regions);
+
+    let (mut projection, mut transform) = camera.into_inner();
+
+    if let Some(field) = &viewport.field
+        && let Projection::Orthographic(projection) = &mut *projection
+    {
+        projection.scale = field.scale;
+        transform.translation.x = field.camera_offset.x;
+        transform.translation.y = field.camera_offset.y;
+    }
 }
 
-fn spawn_legend(commands: &mut Commands, bounds: &BoundsNormalizer) {
-    let bounds = bounds.bounds().expect("simulation field is nonempty");
+fn select_vertex(
+    window: Query<&Window, With<PrimaryWindow>>,
+    buttons: Option<Res<ButtonInput<MouseButton>>>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    viewport: Res<Viewport>,
+    mut view: ResMut<SnapshotView>,
+) {
+    let selection = if keys.is_some_and(|keys| keys.just_pressed(KeyCode::Escape)) {
+        None
+    } else if buttons.is_some_and(|buttons| buttons.just_pressed(MouseButton::Left)) {
+        let Some(world_position) = window
+            .single()
+            .ok()
+            .and_then(Window::cursor_position)
+            .and_then(|cursor| viewport.field.as_ref()?.screen_to_world(cursor))
+        else {
+            return;
+        };
 
-    commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            left: px(0.0),
-            right: px(0.0),
-            bottom: px(24.0),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            column_gap: px(10.0),
-            ..default()
+        let snapshot = view
+            .displayed
+            .as_ref()
+            .expect("viewer setup loaded a snapshot");
+        marker_at(snapshot, world_position)
+    } else {
+        return;
+    };
+
+    if view.selected != selection {
+        view.selected = selection;
+    }
+}
+
+fn marker_at(snapshot: &SimulationSnapshot, world_position: Vec2) -> Option<VertexId> {
+    let diamond_radius = MARKER_SIZE * FRAC_1_SQRT_2;
+
+    snapshot
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            let offset = cell_center(&snapshot.field, vertex.position) - world_position;
+            (offset.x.abs() + offset.y.abs() <= diamond_radius)
+                .then(|| (offset.length_squared(), vertex.id))
         })
-        .with_children(|legend| {
-            legend.spawn((
-                LegendBound::Minimum,
-                LegendBound::Minimum.text(bounds),
-                TextFont::from_font_size(14.0),
-                TextColor(UI_COLORS.subtext1.into()),
-            ));
-            legend.spawn(Node::default()).with_children(|scale| {
-                for index in 0..12 {
-                    scale.spawn((
-                        Node {
-                            width: px(12.0),
-                            height: px(8.0),
-                            ..default()
-                        },
-                        BackgroundColor(heatmap_color(index as f32 / 11.0)),
-                    ));
-                }
-            });
-            legend.spawn((
-                LegendBound::Maximum,
-                LegendBound::Maximum.text(bounds),
-                TextFont::from_font_size(14.0),
-                TextColor(UI_COLORS.subtext1.into()),
-            ));
-        });
+        .min_by(|left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+        })
+        .map(|(_, id)| id)
+}
+
+fn update_display(
+    view: Res<SnapshotView>,
+    mut markers: Query<(&VertexMarker, &mut Sprite, &mut Transform)>,
+    mut text: Query<(&ui::UiText, &mut Text)>,
+    mut regions: Query<(&ui::UiRegion, &mut Node)>,
+) {
+    if !view.is_changed() {
+        return;
+    }
+
+    for (marker, mut sprite, mut transform) in &mut markers {
+        let (outline, depth) = if view.selected == Some(marker.0) {
+            (UI_COLORS.lavender, 2.0)
+        } else {
+            (UI_COLORS.crust, 1.0)
+        };
+
+        if sprite.color != Color::from(outline) {
+            sprite.color = outline.into();
+        }
+
+        if transform.translation.z != depth {
+            transform.translation.z = depth;
+        }
+    }
+
+    let snapshot = view
+        .displayed
+        .as_ref()
+        .expect("viewer setup loaded a snapshot");
+    ui::refresh(
+        snapshot,
+        view.selected,
+        view.bounds.bounds().unwrap(),
+        &mut text,
+        &mut regions,
+    );
 }
 
 #[cfg(test)]
-mod tests {
-    use std::f64::consts::LN_2;
-
-    use simulation::{
-        field::Neighbourhood,
-        graph::Uptake,
-        simulation::{SimulationConfig, SimulationRun, SnapshotPublisher},
-    };
-
-    use super::*;
-
-    #[test]
-    fn viewer_draws_the_vertex_and_refreshes_from_a_completed_tick() {
-        let config = SimulationConfig {
-            width: 9,
-            height: 7,
-            spacing: 1.0,
-            initial_resource: 100.0,
-            resource_noise_scale: 10.0,
-            diffusion_coefficient: 0.8,
-            neighbourhood: Neighbourhood::Moore,
-        };
-
-        let uptake = Uptake::new(10.0, 0.75).unwrap();
-        let mut run = SimulationRun::single_vertex_from_seed(config, 42, uptake, 0.1).unwrap();
-        let initial = run.snapshot();
-        let vertex = initial.vertices[0];
-        let center = cell_center(&initial.field, vertex.position);
-        let mut publisher = SnapshotPublisher::new(initial);
-        let mut app = App::new();
-        app.insert_resource(publisher.reader())
-            .add_plugins(ViewerPlugin::new(BoundsNormalizer::default()));
-        app.update();
-
-        let world = app.world_mut();
-        let marker = world
-            .query_filtered::<Entity, With<VertexMarker>>()
-            .single(world)
-            .unwrap();
-        let status = world
-            .query_filtered::<Entity, With<RunStatus>>()
-            .single(world)
-            .unwrap();
-        assert_eq!(
-            world.get::<Transform>(marker).unwrap().translation,
-            center.extend(1.0)
-        );
-        assert!(world.get::<Text>(status).unwrap().0.contains("Tick 0"));
-        let tiles = world.resource::<Heatmap>().tiles.clone();
-        assert_eq!(tiles.len(), 63);
-        let initial_bounds = world.resource::<SnapshotView>().bounds.bounds();
-
-        run.advance();
-        let next = run.snapshot();
-        publisher.publish(next.clone());
-        app.update();
-
-        let world = app.world();
-        assert_eq!(world.resource::<Heatmap>().tiles, tiles);
-        assert_eq!(world.get::<Text>(status).unwrap().0, status_text(&next));
-        assert!(
-            world
-                .get::<Text>(status)
-                .unwrap()
-                .0
-                .contains("Stored resource 0.75")
-        );
-
-        let view = world.resource::<SnapshotView>();
-        assert_eq!(view.displayed_tick, 1);
-        assert_eq!(view.bounds.bounds(), initial_bounds);
-
-        for (tile, &amount) in tiles.into_iter().zip(next.field.resources()) {
-            let sprite = world.get::<Sprite>(tile).unwrap();
-            assert_eq!(sprite.color, heatmap_color(view.bounds.normalize(amount)));
-        }
-
-        let mut reseeded = next;
-        reseeded.field_seed = 24;
-        reseeded.field.randomize(reseeded.field_seed, 10.0, 200.0);
-        publisher.publish(reseeded);
-        app.update();
-
-        let world = app.world_mut();
-        let view = world.resource::<SnapshotView>();
-        assert_eq!(view.field_seed, 24);
-        let bounds = view.bounds.bounds().unwrap();
-        let mut legend = world.query::<(&LegendBound, &Text)>();
-
-        for (bound, label) in legend.iter(world) {
-            assert_eq!(*label, bound.text(bounds));
-        }
-    }
-
-    #[test]
-    fn configured_normalizer_smooths_the_heatmap_and_legend_until_reseed() {
-        let config = SimulationConfig {
-            width: 3,
-            height: 1,
-            spacing: 1.0,
-            initial_resource: 100.0,
-            resource_noise_scale: 10.0,
-            diffusion_coefficient: 0.0,
-            neighbourhood: Neighbourhood::Moore,
-        };
-
-        let uptake = Uptake::new(1.0, 1.0).unwrap();
-        let run = SimulationRun::single_vertex_from_seed(config, 42, uptake, LN_2 / 2.0).unwrap();
-        let mut snapshot = run.snapshot();
-        snapshot
-            .field
-            .resources_mut()
-            .copy_from_slice(&[20.0, 35.0, 80.0]);
-        let mut publisher = SnapshotPublisher::new(snapshot.clone());
-        let mut app = App::new();
-        app.insert_resource(publisher.reader())
-            .add_plugins(ViewerPlugin::new(BoundsNormalizer::new(
-                BoundsAveraging::EMA { tau: 1.0 },
-            )));
-        app.update();
-
-        snapshot.tick = 2;
-        snapshot.simulation_time = LN_2;
-        snapshot
-            .field
-            .resources_mut()
-            .copy_from_slice(&[40.0, 45.0, 60.0]);
-        publisher.publish(snapshot.clone());
-        app.update();
-
-        let world = app.world_mut();
-        let bounds = (30.0, 70.0);
-        assert_eq!(
-            world.resource::<SnapshotView>().bounds.bounds(),
-            Some(bounds)
-        );
-        let middle = world.resource::<Heatmap>().tiles[1];
-        assert_eq!(
-            world.get::<Sprite>(middle).unwrap().color,
-            heatmap_color(0.375)
-        );
-        let mut legend = world.query::<(&LegendBound, &Text)>();
-        assert_eq!(legend.iter(world).count(), 2);
-
-        for (bound, label) in legend.iter(world) {
-            assert_eq!(*label, bound.text(bounds));
-        }
-
-        snapshot.field_seed = 43;
-        publisher.publish(snapshot);
-        app.update();
-
-        let view = app.world().resource::<SnapshotView>();
-        assert_eq!(view.bounds.bounds(), Some((40.0, 60.0)));
-    }
-}
+mod tests;

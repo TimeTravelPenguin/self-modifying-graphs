@@ -18,6 +18,7 @@ use simulation::{
 mod viewer;
 
 const STEP_INTERVAL: Duration = Duration::from_millis(100);
+const MODEL_TIMESTEP: Duration = Duration::from_millis(100);
 
 fn main() -> AppExit {
     let uptake = Uptake::saturating(20.0, 10.0, 0.75).expect("invalid uptake parameters");
@@ -29,6 +30,7 @@ fn main() -> AppExit {
             spacing: 1.0,
         })
         .with_step_interval(STEP_INTERVAL)
+        .with_model_timestep(MODEL_TIMESTEP)
         .with_starting_vertex(vertex_config);
 
     let mut app = App::new();
