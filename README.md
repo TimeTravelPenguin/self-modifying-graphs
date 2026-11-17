@@ -77,8 +77,8 @@ Q(x, y, t) = \eta(x, y, t) U(x, y, t)
 where:
 
 - $\eta(x, y, t)$ described the efficiency of resource extraction for the vertex at
-  $(x, y)$ and time $t$. That is, a resource may extract some amount $x$, but only retain
-  some proportion $0 \leq r \leq 1$. Thus, an amount $(1 - r) x$ is consumed/lost as a
+  $(x, y)$ and time $t$. That is, a resource may extract some amount $w$, but only retain
+  some proportion $0 \leq r \leq 1$. Thus, an amount $(1 - r) w$ is consumed/lost as a
   cost for resource extraction.
 
 Some examples for $\eta$ include:
