@@ -138,7 +138,10 @@ tool to maintain a correct and optimal codebase.
     </td>
     <td>
       <p>
-        AI was only used to fix what already existed, or to refactor work into a more scalable design.
+        AI was only used to fix what already existed, or to refactor work into a more
+        scalable design, with the only exceptions being for code related to UI and some
+        visualisation code in Bevy. This Bevy code was still heavily instructed and
+        reviewed.
       </p>
       <p>All ideas are my own.</p>
     </td>
