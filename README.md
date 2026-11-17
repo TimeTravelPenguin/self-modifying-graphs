@@ -1,5 +1,9 @@
 # Self-Modifying Graphs
 
+> [!IMPORTANT]
+> This project is still a work in progress. Additional information, including build
+> instructions, will be added when the project is in a more complete state.
+
 This is a personal research project that looks at how graphs can evolve within an
 environment, subject to constraints.
 
