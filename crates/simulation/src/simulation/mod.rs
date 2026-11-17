@@ -240,8 +240,9 @@ impl Simulation {
 
     /// Diffuses the field, then lets each vertex consume from its home cell.
     ///
-    /// `dt` is the elapsed model time. Each vertex withdraws at most its
-    /// uptake rate times `dt` and stores the efficiency-adjusted amount.
+    /// `dt` is the elapsed model time. Each vertex applies its uptake law to
+    /// the cell amount after diffusion, caps withdrawal at that amount, and
+    /// stores the efficiency-adjusted share.
     ///
     /// # Panics
     ///
