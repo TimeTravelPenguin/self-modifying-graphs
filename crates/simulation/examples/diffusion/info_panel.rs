@@ -1,17 +1,14 @@
 use bevy::prelude::*;
-use simulation::{field::Diffuser, normalization::BoundsNormalizer};
-
-use super::{
-    BoundsNormalizerRes, DIFFUSION_COEFFICIENT, DIFFUSION_DT, DIFFUSION_SPACING, DiffuserRes,
-};
+use simulation::{DiffusionConfig, SimulationTime, normalization::BoundsNormalizer};
 
 #[derive(Component)]
 pub(super) struct OnScreenInfo;
 
 pub(super) fn spawn_on_screen_info(
     commands: &mut Commands,
-    diffuser: &Diffuser,
+    diffusion: &DiffusionConfig,
     bounds: &BoundsNormalizer,
+    time: &SimulationTime,
 ) {
     commands
         .spawn(Node {
@@ -28,38 +25,55 @@ pub(super) fn spawn_on_screen_info(
             parent.spawn((Text::new("Simulation Info"), TextFont::from_font_size(20.0)));
             parent.spawn((
                 OnScreenInfo,
-                Text::new(on_screen_info_text(diffuser, bounds)),
+                Text::new(on_screen_info_text(diffusion, bounds, time)),
                 TextFont::from_font_size(14.0),
             ));
         });
 }
 
-fn on_screen_info_text(diffuser: &Diffuser, bounds: &BoundsNormalizer) -> String {
+fn on_screen_info_text(
+    diffusion: &DiffusionConfig,
+    bounds: &BoundsNormalizer,
+    time: &SimulationTime,
+) -> String {
     let limits = match bounds.bounds() {
         Some((min, max)) => format!("({min:.2}, {max:.2})"),
         None => "N/A".to_string(),
     };
 
+    let diffusion_details = match *diffusion {
+        DiffusionConfig::None => "Diffusion: None".to_string(),
+        DiffusionConfig::Enabled {
+            neighbourhood,
+            coefficient,
+            spacing,
+        } => format!(
+            "Diffusion Neighborhood: {neighbourhood:?}\n\
+             Diffusion Coefficient: {coefficient:.2}\n\
+             Diffusion Spacing (h): {spacing:.2}"
+        ),
+    };
+
+    let dt = time.timestep().as_secs_f64();
+
     format!(
-        "Diffusion Neighborhood: {:?}\n\
+        "{diffusion_details}\n\
          Bounds Averaging Method: {:?}\n\
          Bounds (min, max): {limits}\n\
-         Diffusion Coefficient: {DIFFUSION_COEFFICIENT:.2}\n\
-         Diffusion Time Step (dt): {DIFFUSION_DT:.2}\n\
-         Diffusion Spacing (h): {DIFFUSION_SPACING:.2}",
-        diffuser.neighbourhood(),
+         Simulation Time Step (dt): {dt:.2}",
         bounds.method(),
     )
 }
 
 pub(super) fn update_on_screen_info(
-    diffuser: Res<DiffuserRes>,
-    bounds: Res<BoundsNormalizerRes>,
+    diffusion: Res<DiffusionConfig>,
+    bounds: Res<BoundsNormalizer>,
+    time: Res<SimulationTime>,
     mut text: Single<&mut Text, With<OnScreenInfo>>,
 ) {
-    if !diffuser.is_changed() && !bounds.is_changed() {
+    if !diffusion.is_changed() && !bounds.is_changed() && !time.is_changed() {
         return;
     }
 
-    text.set_if_neq(Text::new(on_screen_info_text(&diffuser, &bounds)));
+    text.set_if_neq(Text::new(on_screen_info_text(&diffusion, &bounds, &time)));
 }

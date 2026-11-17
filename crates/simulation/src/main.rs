@@ -1,10 +1,10 @@
 use simulation::{
     field::Neighbourhood,
     graph::Uptake,
-    simulation::{Simulation, SimulationConfig, SimulationError},
+    simulation::{
+        SimulationConfig, SimulationError, SimulationRun, SimulationSnapshot, SnapshotPublisher,
+    },
 };
-
-const SEED: u32 = 42;
 
 fn main() -> Result<(), SimulationError> {
     let config = SimulationConfig {
@@ -17,36 +17,40 @@ fn main() -> Result<(), SimulationError> {
         neighbourhood: Neighbourhood::Moore,
     };
 
-    let mut simulation = Simulation::from_seed(config, SEED);
+    let seed = rand::random::<u32>();
+    let uptake = Uptake::new(10.0, 0.75).expect("invalid uptake parameters");
+    let mut run = SimulationRun::single_vertex_from_seed(config, seed, uptake, 0.1)?;
+    let mut publisher = SnapshotPublisher::new(run.snapshot());
+    let reader = publisher.reader();
 
-    let v1 = simulation.add_vertex(
-        (5, 5),
-        Uptake::new(10.0, 0.75).expect("Invalid uptake parameters"),
-    )?;
-    let v2 = simulation.add_vertex(
-        (5, 6),
-        Uptake::new(5.0, 0.5).expect("Invalid uptake parameters"),
-    )?;
-    let edge = simulation.add_edge(v1, v2)?;
+    let initial = reader.latest();
+    println!("Seed {}", initial.seed);
+    print_snapshot(&initial);
 
     for _ in 0..10 {
-        let res = simulation
-            .field()
-            .get_resource_at((5, 5))
-            .expect("Position should be valid");
-        println!("Resource at (5, 5): {}", res);
-
-        let vert = simulation.graph().vertex(v1).expect("Vertex should exist");
-        println!("{:?}", vert);
-
-        let vert = simulation.graph().vertex(v2).expect("Vertex should exist");
-        println!("{:?}", vert);
-
-        let edge = simulation.graph().edge(edge).expect("Edge should exist");
-        println!("{:?}\n", edge);
-
-        simulation.step(0.1);
+        run.advance();
+        publisher.publish(run.snapshot());
+        print_snapshot(&reader.latest());
     }
 
     Ok(())
+}
+
+fn print_snapshot(snapshot: &SimulationSnapshot) {
+    let vertex = snapshot.vertices.first().expect("starting vertex exists");
+    let available = snapshot
+        .field
+        .get_resource_at(vertex.position)
+        .expect("vertex position is in the field");
+
+    println!(
+        "Tick {} at time {:.1} | vertex {:?} at ({}, {}) | cell {:.3} | stored {:.3}",
+        snapshot.tick,
+        snapshot.simulation_time,
+        vertex.id,
+        vertex.position.x,
+        vertex.position.y,
+        available,
+        vertex.stored_resource,
+    );
 }

@@ -1,12 +1,13 @@
+use bevy::{ecs::resource::Resource, reflect::Reflect};
 use noise::{NoiseFn, Perlin};
 
 use crate::Position;
 
 mod diffusion;
 
-pub use diffusion::{Diffuser, Neighbourhood};
+pub use diffusion::{Diffuser, DiffusionError, Neighbourhood};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Resource, Reflect, Clone, PartialEq)]
 pub struct ResourceField {
     height: usize,
     width: usize,

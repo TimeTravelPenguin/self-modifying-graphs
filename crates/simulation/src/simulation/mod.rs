@@ -5,11 +5,16 @@ use thiserror::Error;
 
 use crate::{
     Position,
-    field::{Diffuser, ResourceField},
+    field::{Diffuser, DiffusionError, ResourceField},
     graph::{AddEdgeError, Edge, EdgeId, Graph, Uptake, Vertex, VertexId},
 };
 
+mod run;
+mod snapshot;
+
 pub use crate::normalization as bounds;
+pub use run::{SimulationRun, SimulationView};
+pub use snapshot::{SimulationSnapshot, SnapshotPublisher, SnapshotReader, VertexSnapshot};
 
 pub mod diffusion {
     pub use crate::field::{Diffuser, Neighbourhood};
@@ -32,6 +37,9 @@ pub enum SimulationError {
 
     #[error(transparent)]
     AddEdge(#[from] AddEdgeError),
+
+    #[error(transparent)]
+    Diffusion(#[from] DiffusionError),
 }
 
 pub struct SimulationConfig {

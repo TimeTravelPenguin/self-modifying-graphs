@@ -1,20 +1,74 @@
+use bevy::{ecs::resource::Resource, reflect::Reflect};
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
+use thiserror::Error;
 
 use super::ResourceField;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Error)]
+pub enum DiffusionError {
+    #[error("invalid diffusion coefficient {0}")]
+    InvalidCoefficient(f64),
+
+    #[error("invalid diffusion timestep {0}")]
+    InvalidTimestep(f64),
+
+    #[error("invalid diffusion spacing {0}")]
+    InvalidSpacing(f64),
+
+    #[error("diffusion number {diffusion_number} must be finite and at most {limit}")]
+    UnstableTimestep { diffusion_number: f64, limit: f64 },
+}
+
+#[derive(Debug, Reflect, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Neighbourhood {
     /// 5-point Laplacian: 4 cardinal neighbours.
+    #[default]
     VonNeumann,
 
     /// 9-point Laplacian: 4 cardinal + 4 diagonal neighbours.
     Moore,
 }
 
-#[derive(Debug)]
+impl Neighbourhood {
+    pub(crate) fn diffusion_number(
+        self,
+        diffusion_coefficient: f64,
+        dt: f64,
+        spacing: f64,
+    ) -> Result<f64, DiffusionError> {
+        if !diffusion_coefficient.is_finite() || diffusion_coefficient < 0.0 {
+            return Err(DiffusionError::InvalidCoefficient(diffusion_coefficient));
+        }
+
+        if !dt.is_finite() || dt < 0.0 {
+            return Err(DiffusionError::InvalidTimestep(dt));
+        }
+
+        if !spacing.is_finite() || spacing <= 0.0 {
+            return Err(DiffusionError::InvalidSpacing(spacing));
+        }
+
+        let diffusion_number = diffusion_coefficient * dt / (spacing * spacing);
+        let limit = match self {
+            Self::VonNeumann => 0.25,
+            Self::Moore => 0.30,
+        };
+
+        if !diffusion_number.is_finite() || diffusion_number > limit {
+            return Err(DiffusionError::UnstableTimestep {
+                diffusion_number,
+                limit,
+            });
+        }
+
+        Ok(diffusion_number)
+    }
+}
+
+#[derive(Debug, Resource, Reflect, Default, Clone, PartialEq)]
 pub struct Diffuser {
     neighbourhood: Neighbourhood,
     buffer: Vec<f64>,
@@ -43,21 +97,10 @@ impl Diffuser {
         dt: f64,
         spacing: f64,
     ) {
-        assert!(diffusion_coefficient.is_finite() && diffusion_coefficient >= 0.0);
-        assert!(dt.is_finite() && dt >= 0.0);
-        assert!(spacing.is_finite() && spacing > 0.0);
-
-        let lambda = diffusion_coefficient * dt / (spacing * spacing);
-
-        let max_lambda = match self.neighbourhood {
-            Neighbourhood::VonNeumann => 0.25,
-            Neighbourhood::Moore => 0.30,
-        };
-
-        assert!(
-            lambda.is_finite() && lambda <= max_lambda,
-            "Diffusion timestep is too large: {lambda} > {max_lambda}"
-        );
+        let lambda = self
+            .neighbourhood
+            .diffusion_number(diffusion_coefficient, dt, spacing)
+            .unwrap_or_else(|error| panic!("{error}"));
 
         let width = field.width();
         let height = field.height();

@@ -1,6 +1,8 @@
+use bevy::{ecs::resource::Resource, reflect::Reflect};
+
 use crate::field::ResourceField;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Reflect, Default, Clone, Copy, PartialEq)]
 pub enum BoundsAveraging {
     /// No averaging.
     #[default]
@@ -8,8 +10,9 @@ pub enum BoundsAveraging {
 
     /// Exponential moving average.
     ///
-    /// `tau` is the smoothing time constant,
-    /// measured in simulation time units.
+    /// `tau` is the smoothing time constant, measured in simulation time units.
+    /// That it is, the bounds will be smoothed over a time window of
+    /// approximately `tau` simulation time units.
     EMA { tau: f64 },
 }
 
@@ -24,7 +27,7 @@ impl BoundsAveraging {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Resource, Reflect, Clone, PartialEq)]
 pub struct BoundsNormalizer {
     averaging: BoundsAveraging,
     bounds: Option<(f64, f64)>,

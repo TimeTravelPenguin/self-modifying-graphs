@@ -1,25 +1,13 @@
 pub mod field;
 pub mod graph;
 pub mod normalization;
+pub mod plugin;
 pub mod simulation;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Position {
-    pub x: usize,
-    pub y: usize,
-}
+mod position;
 
-impl Position {
-    pub fn new(x: usize, y: usize) -> Self {
-        Self { x, y }
-    }
-}
-
-impl From<(usize, usize)> for Position {
-    fn from(tuple: (usize, usize)) -> Self {
-        Self {
-            x: tuple.0,
-            y: tuple.1,
-        }
-    }
-}
+pub use plugin::{
+    DiffusionConfig, SimulationPlugin, SimulationSet, SimulationStartup, SimulationStep,
+    SimulationTime,
+};
+pub use position::Position;

@@ -1,8 +1,6 @@
 use bevy::prelude::*;
 use simulation::{field::ResourceField, normalization::BoundsNormalizer};
 
-use super::{BoundsNormalizerRes, ResourceFieldRes};
-
 const FONT_SIZE: f32 = 0.0;
 const TILE_SIZE: f32 = 6.0;
 const TILE_GAP: f32 = 0.0;
@@ -63,8 +61,8 @@ pub(super) fn spawn_heatmap(
 
 pub(super) fn update_heatmap(
     heatmap: Res<Heatmap>,
-    resources: Res<ResourceFieldRes>,
-    bounds: Res<BoundsNormalizerRes>,
+    resources: Res<ResourceField>,
+    bounds: Res<BoundsNormalizer>,
     mut tiles: Query<(&mut Sprite, Option<&Children>), With<Tile>>,
     mut texts: Query<(&mut Text2d, &mut TextColor)>,
 ) {
