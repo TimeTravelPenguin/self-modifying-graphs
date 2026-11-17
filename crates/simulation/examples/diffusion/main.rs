@@ -7,6 +7,7 @@ use simulation::{
     DiffusionConfig, SimulationPlugin, SimulationTime,
     field::{Neighbourhood, ResourceField},
     normalization::{BoundsAveraging, BoundsNormalizer},
+    rendering::UI_COLORS,
 };
 
 mod heatmap;
@@ -50,6 +51,7 @@ fn configure_simulation(app: &mut App, width: u32, height: u32) {
     *plugin.bounds_normalizer() = BoundsNormalizer::new(BoundsAveraging::EMA { tau: 1.0 });
 
     app.add_plugins(plugin)
+        .insert_resource(ClearColor(UI_COLORS.base.into()))
         .add_systems(Startup, setup)
         .add_systems(Update, handle_keyboard_input)
         .add_systems(

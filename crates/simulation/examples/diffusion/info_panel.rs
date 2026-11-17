@@ -1,5 +1,7 @@
 use bevy::prelude::*;
-use simulation::{DiffusionConfig, SimulationTime, normalization::BoundsNormalizer};
+use simulation::{
+    DiffusionConfig, SimulationTime, normalization::BoundsNormalizer, rendering::UI_COLORS,
+};
 
 #[derive(Component)]
 pub(super) struct OnScreenInfo;
@@ -22,11 +24,16 @@ pub(super) fn spawn_on_screen_info(
             ..default()
         })
         .with_children(|parent| {
-            parent.spawn((Text::new("Simulation Info"), TextFont::from_font_size(20.0)));
+            parent.spawn((
+                Text::new("Simulation Info"),
+                TextFont::from_font_size(20.0),
+                TextColor(UI_COLORS.text.into()),
+            ));
             parent.spawn((
                 OnScreenInfo,
                 Text::new(on_screen_info_text(diffusion, bounds, time)),
                 TextFont::from_font_size(14.0),
+                TextColor(UI_COLORS.subtext1.into()),
             ));
         });
 }
