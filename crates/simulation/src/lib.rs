@@ -15,7 +15,7 @@ pub mod simulation;
 mod position;
 
 pub use plugin::{
-    DiffusionConfig, SimulationPlugin, SimulationSet, SimulationStartup, SimulationStep,
-    SimulationTime,
+    DiffusionConfig, SimulationControls, SimulationPlugin, SimulationSet, SimulationStartup,
+    SimulationStep, SimulationTime,
 };
 pub use position::Position;

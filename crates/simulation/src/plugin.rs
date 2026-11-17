@@ -1,4 +1,4 @@
-//! Bevy setup and fixed-step scheduling for a resource field.
+//! Bevy setup for a scheduled resource field or a snapshot-driven graph run.
 
 use std::time::Duration;
 
@@ -11,8 +11,16 @@ use bevy_rand::{plugin::EntropyPlugin, prelude::ChaCha12Rng};
 
 use crate::{
     field::{Diffuser, DiffusionError, Neighbourhood, ResourceField},
+    graph::VertexConfig,
     normalization::BoundsNormalizer,
+    simulation::{SimulationConfig, SimulationRun},
 };
+
+mod worker;
+
+pub use worker::SimulationControls;
+
+use worker::SimulationWorker;
 
 /// Runtime diffusion settings for the Bevy simulation schedule.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Resource)]
@@ -81,12 +89,17 @@ pub enum SimulationSet {
     Observe,
 }
 
-/// Creates a seeded [`ResourceField`] and installs its Bevy simulation schedules.
+/// Sets up either a scheduled resource field or a worker-backed graph run.
 ///
-/// Install alongside Bevy's `TimePlugin`, which is included in `MinimalPlugins`
-/// and `DefaultPlugins`. The default uses a 100 by 100 grid, a fresh seed, and
-/// disabled diffusion. Add model rules to [`SimulationSet::Step`] in
+/// For a scheduled field, install alongside Bevy's `TimePlugin`, which is included
+/// in `MinimalPlugins` and `DefaultPlugins`. The default uses a 100 by 100 grid,
+/// a fresh seed, and disabled diffusion. Add model rules to [`SimulationSet::Step`] in
 /// [`SimulationStep`] to apply them before the display bounds are sampled.
+///
+/// [`Self::with_starting_vertex`] starts a single-vertex run on a worker thread
+/// and installs a [`SnapshotReader`](crate::simulation::SnapshotReader) and
+/// [`SimulationControls`] for the app to use. The worker advances the model and
+/// joins when the Bevy app is dropped.
 ///
 /// # Examples
 ///
@@ -134,14 +147,16 @@ pub struct SimulationPlugin {
     pub perlin_scale: f64,
     /// Upper bound on the initial resource amount in a cell.
     pub max_resource: f64,
-    /// Normalizer copied into the Bevy world and initialized from the field.
+    /// Normalizer used by the Bevy-scheduled field.
     pub bounds_normalizer: BoundsNormalizer,
-    /// Initial settings for the mutable [`DiffusionConfig`] resource.
+    /// Initial settings for the selected simulation mode.
     pub diffusion: DiffusionConfig,
-    /// Bevy fixed interval. `None` keeps Bevy's configured interval.
+    /// Wall-clock interval for the worker or Bevy's fixed step.
     pub step_interval: Option<Duration>,
-    /// Model time advanced per tick. `None` uses the fixed interval at installation.
+    /// Model time advanced per tick. `None` uses the selected wall-clock interval.
     pub model_timestep: Option<Duration>,
+    /// Configuration for a single-vertex run driven by a worker thread.
+    pub starting_vertex: Option<VertexConfig>,
 }
 
 impl Default for SimulationPlugin {
@@ -156,6 +171,7 @@ impl Default for SimulationPlugin {
             diffusion: DiffusionConfig::None,
             step_interval: None,
             model_timestep: None,
+            starting_vertex: None,
         }
     }
 }
@@ -197,7 +213,7 @@ impl SimulationPlugin {
         self
     }
 
-    /// Sets the nonzero interval used by Bevy's fixed clock.
+    /// Sets the nonzero interval used by the worker or Bevy's fixed clock.
     pub fn with_step_interval(mut self, interval: Duration) -> Self {
         self.step_interval = Some(interval);
         self
@@ -208,10 +224,68 @@ impl SimulationPlugin {
         self.model_timestep = Some(timestep);
         self
     }
+
+    /// Starts a worker-backed graph run with one randomly placed vertex.
+    pub fn with_starting_vertex(mut self, config: impl Into<VertexConfig>) -> Self {
+        self.starting_vertex = Some(config.into());
+        self
+    }
+
+    fn install_worker(&self, app: &mut App, vertex: VertexConfig, seed: u32) {
+        let interval = self.step_interval.unwrap_or_else(|| {
+            app.world()
+                .get_resource::<Time<Fixed>>()
+                .map_or_else(|| Time::<Fixed>::default().timestep(), Time::timestep)
+        });
+        let timestep = self.model_timestep.unwrap_or(interval);
+        let (neighbourhood, diffusion_coefficient, spacing) = match self.diffusion {
+            DiffusionConfig::None => (Neighbourhood::default(), 0.0, 1.0),
+            DiffusionConfig::Enabled {
+                neighbourhood,
+                coefficient,
+                spacing,
+            } => (neighbourhood, coefficient, spacing),
+        };
+
+        let config = SimulationConfig {
+            width: self.width,
+            height: self.height,
+            spacing,
+            initial_resource: self.max_resource,
+            resource_noise_scale: self.perlin_scale,
+            diffusion_coefficient,
+            neighbourhood,
+        };
+
+        let run =
+            SimulationRun::single_vertex_from_seed(config, seed, vertex, timestep.as_secs_f64())
+                .unwrap_or_else(|error| panic!("invalid simulation run settings: {error}"));
+        let worker = SimulationWorker::start(
+            run,
+            interval,
+            self.perlin_scale,
+            self.max_resource,
+            self.diffusion != DiffusionConfig::None,
+        )
+        .unwrap_or_else(|error| panic!("could not start the simulation worker: {error}"));
+
+        install_entropy(app, seed);
+        app.insert_resource(worker.reader())
+            .insert_resource(worker.controls())
+            .insert_resource(worker);
+        println!("Simulation seed {seed}");
+    }
 }
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
+        let seed = self.seed.unwrap_or_else(rand::random);
+
+        if let Some(vertex) = self.starting_vertex {
+            self.install_worker(app, vertex, seed);
+            return;
+        }
+
         app.init_resource::<Time<Fixed>>();
 
         if let Some(interval) = self.step_interval {
@@ -228,7 +302,6 @@ impl Plugin for SimulationPlugin {
             .validate(model_timestep.as_secs_f64())
             .unwrap_or_else(|error| panic!("invalid simulation diffusion settings: {error}"));
 
-        let seed = self.seed.unwrap_or_else(rand::random);
         let resources = ResourceField::new_random(
             self.height,
             self.width,
@@ -237,10 +310,7 @@ impl Plugin for SimulationPlugin {
             self.max_resource,
         );
 
-        let seed_bytes = seed.to_le_bytes();
-        let mut rng_seed = [0; 32];
-        rng_seed[..seed_bytes.len()].copy_from_slice(&seed_bytes);
-
+        install_entropy(app, seed);
         app.init_schedule(SimulationStartup)
             .init_schedule(SimulationStep)
             .configure_sets(
@@ -252,7 +322,6 @@ impl Plugin for SimulationPlugin {
                 )
                     .chain(),
             )
-            .add_plugins(EntropyPlugin::<ChaCha12Rng>::with_seed(rng_seed))
             .insert_resource(time)
             .insert_resource(self.diffusion)
             .insert_resource(self.bounds_normalizer.clone())
@@ -273,6 +342,13 @@ impl Plugin for SimulationPlugin {
             .resource_mut::<FixedMainScheduleOrder>()
             .insert_after(FixedUpdate, SimulationStep);
     }
+}
+
+fn install_entropy(app: &mut App, seed: u32) {
+    let seed_bytes = seed.to_le_bytes();
+    let mut rng_seed = [0; 32];
+    rng_seed[..seed_bytes.len()].copy_from_slice(&seed_bytes);
+    app.add_plugins(EntropyPlugin::<ChaCha12Rng>::with_seed(rng_seed));
 }
 
 fn initialize_bounds(resources: Res<ResourceField>, mut bounds: ResMut<BoundsNormalizer>) {

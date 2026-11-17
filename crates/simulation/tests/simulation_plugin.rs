@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 use bevy::{
     app::FixedMain,
@@ -6,16 +9,65 @@ use bevy::{
     time::{TimePlugin, TimeUpdateStrategy},
 };
 use simulation::{
-    DiffusionConfig, SimulationPlugin, SimulationSet, SimulationStartup, SimulationStep,
-    SimulationTime,
+    DiffusionConfig, SimulationControls, SimulationPlugin, SimulationSet, SimulationStartup,
+    SimulationStep, SimulationTime,
     field::{Neighbourhood, ResourceField},
+    graph::Uptake,
     normalization::BoundsNormalizer,
+    simulation::SnapshotReader,
 };
 
 #[derive(Resource, Default)]
 struct ScheduleRuns {
     startup: bool,
     steps: u32,
+}
+
+#[test]
+fn starting_vertex_uses_the_worker_and_reseeds_its_field() {
+    let uptake = Uptake::new(1.0, 1.0).unwrap();
+    let mut app = App::new();
+    app.add_plugins(
+        SimulationPlugin::default()
+            .with_dimensions(3, 2)
+            .with_seed(7)
+            .with_step_interval(Duration::from_millis(20))
+            .with_starting_vertex(uptake),
+    );
+
+    let world = app.world();
+    assert!(world.get_resource::<ResourceField>().is_none());
+    assert!(world.get_resource::<SimulationTime>().is_none());
+    let reader = world.resource::<SnapshotReader>().clone();
+    let controls = world.resource::<SimulationControls>().clone();
+    let initial = reader.latest();
+    assert_eq!((initial.field.width(), initial.field.height()), (3, 2));
+    assert_eq!(initial.vertices.len(), 1);
+    assert!(controls.reseed_field(9));
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let reseeded = loop {
+        let snapshot = reader.latest();
+
+        if snapshot.field_seed == 9 {
+            break snapshot;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "worker did not publish the reseeded field"
+        );
+        thread::sleep(Duration::from_millis(1));
+    };
+
+    assert_eq!(reseeded.seed, 7);
+    assert!(reseeded.tick > initial.tick);
+    assert_eq!(reseeded.vertices[0].id, initial.vertices[0].id);
+    assert_eq!(reseeded.vertices[0].position, initial.vertices[0].position);
+    assert_ne!(reseeded.field, initial.field);
+
+    drop(app);
+    assert!(!controls.reseed_field(10));
 }
 
 #[test]

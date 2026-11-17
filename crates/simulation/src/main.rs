@@ -3,61 +3,68 @@
 //! Every launch starts a new run and prints its seed. The simulation worker owns
 //! the model and its clock, and the viewer draws completed snapshots.
 
-use std::{error::Error, io, time::Duration};
+use std::time::Duration;
 
 use bevy::{prelude::*, window::WindowResizeConstraints};
+use bevy_rand::{global::GlobalRng, prelude::ChaCha12Rng};
+use rand::RngExt;
 use simulation::{
+    DiffusionConfig, SimulationControls, SimulationPlugin,
     field::Neighbourhood,
-    graph::Uptake,
-    simulation::{SimulationConfig, SimulationRun},
+    graph::{Uptake, VertexConfig},
+    normalization::{BoundsAveraging, BoundsNormalizer},
 };
 
 mod viewer;
-mod worker;
-
-use worker::SimulationWorker;
 
 const STEP_INTERVAL: Duration = Duration::from_millis(100);
 
-fn main() -> Result<AppExit, Box<dyn Error>> {
-    let config = SimulationConfig {
-        width: 100,
-        height: 100,
-        spacing: 1.0,
-        initial_resource: 100.0,
-        resource_noise_scale: 10.0,
-        diffusion_coefficient: 0.8,
-        neighbourhood: Neighbourhood::Moore,
-    };
-
-    let seed = rand::random::<u32>();
-    let uptake = Uptake::new(10.0, 0.75).expect("invalid uptake parameters");
-    let run =
-        SimulationRun::single_vertex_from_seed(config, seed, uptake, STEP_INTERVAL.as_secs_f64())?;
+fn main() -> AppExit {
+    let uptake = Uptake::saturating(20.0, 10.0, 0.75).expect("invalid uptake parameters");
+    let vertex_config = VertexConfig::new(uptake, 1.2).expect("invalid vertex config parameters");
+    let simulation = SimulationPlugin::default()
+        .with_diffusion(DiffusionConfig::Enabled {
+            neighbourhood: Neighbourhood::Moore,
+            coefficient: 0.8,
+            spacing: 1.0,
+        })
+        .with_step_interval(STEP_INTERVAL)
+        .with_starting_vertex(vertex_config);
 
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Graph simulation".into(),
-            resolution: (1040, 820).into(),
-            resize_constraints: WindowResizeConstraints {
-                min_width: 760.0,
-                min_height: 740.0,
+    app.add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Graph simulation".into(),
+                resolution: (1040, 820).into(),
+                resize_constraints: WindowResizeConstraints {
+                    min_width: 760.0,
+                    min_height: 740.0,
+                    ..default()
+                },
                 ..default()
-            },
+            }),
             ..default()
         }),
-        ..default()
-    }));
+        simulation,
+        viewer::ViewerPlugin::new(BoundsNormalizer::new(BoundsAveraging::EMA { tau: 10.0 })),
+    ));
 
-    let worker = SimulationWorker::start(run, STEP_INTERVAL)?;
-    println!("Simulation seed {seed}");
-    viewer::configure(&mut app, worker.reader());
+    app.add_systems(Update, handle_keyboard_input);
 
-    let exit = app.run();
-    worker
-        .stop()
-        .map_err(|_| io::Error::other("simulation worker panicked"))?;
+    app.run()
+}
 
-    Ok(exit)
+fn handle_keyboard_input(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    controls: Res<SimulationControls>,
+    mut rng: Single<&mut ChaCha12Rng, With<GlobalRng>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Space) && !controls.toggle_neighbourhood() {
+        warn!("Simulation worker has stopped");
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyR) && !controls.reseed_field(rng.random()) {
+        warn!("Simulation worker has stopped");
+    }
 }

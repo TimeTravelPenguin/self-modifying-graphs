@@ -1,5 +1,5 @@
 use crate::{
-    field::{DiffusionError, ResourceField},
+    field::{DiffusionError, Neighbourhood, ResourceField},
     graph::{Graph, VertexConfig},
 };
 
@@ -47,13 +47,14 @@ use super::{Simulation, SimulationConfig, SimulationError, SimulationSnapshot, V
 pub struct SimulationRun {
     simulation: Simulation,
     seed: u32,
+    field_seed: u32,
     dt: f64,
     tick: u64,
 }
 
 /// A borrowed view of a run at its most recent completed tick.
 pub struct SimulationView<'a> {
-    /// Seed used to generate the field and choose the initial vertex position.
+    /// Seed used to generate the initial field and choose the starting vertex position.
     pub seed: u32,
     /// Number of completed ticks, starting at zero.
     pub tick: u64,
@@ -96,6 +97,7 @@ impl SimulationRun {
         Ok(Self {
             simulation,
             seed,
+            field_seed: seed,
             dt,
             tick: 0,
         })
@@ -112,6 +114,28 @@ impl SimulationRun {
         let next_tick = self.tick.checked_add(1).expect("simulation tick overflow");
         self.simulation.step(self.dt);
         self.tick = next_tick;
+    }
+
+    /// Switches to the other diffusion stencil if it is stable at this run's timestep.
+    pub(crate) fn toggle_neighbourhood(&mut self) -> Result<Neighbourhood, SimulationError> {
+        let neighbourhood = match self.simulation.diffuser.neighbourhood() {
+            Neighbourhood::VonNeumann => Neighbourhood::Moore,
+            Neighbourhood::Moore => Neighbourhood::VonNeumann,
+        };
+
+        neighbourhood.diffusion_number(
+            self.simulation.diffusion_coefficient,
+            self.dt,
+            self.simulation.spacing,
+        )?;
+        self.simulation.diffuser.set_neighbourhood(neighbourhood);
+        Ok(neighbourhood)
+    }
+
+    /// Regenerates the field while preserving the graph and current tick.
+    pub(crate) fn reseed_field(&mut self, seed: u32, scale: f64, max_resource: f64) {
+        self.simulation.field.randomize(seed, scale, max_resource);
+        self.field_seed = seed;
     }
 
     /// Borrows the current field and graph so the run cannot advance during a read.
@@ -143,6 +167,7 @@ impl SimulationRun {
 
         SimulationSnapshot {
             seed: view.seed,
+            field_seed: self.field_seed,
             tick: view.tick,
             simulation_time: view.simulation_time,
             field: view.field.clone(),

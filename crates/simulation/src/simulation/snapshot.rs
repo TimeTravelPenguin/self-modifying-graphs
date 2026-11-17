@@ -1,12 +1,16 @@
 use std::sync::{Arc, Mutex};
 
+use bevy::ecs::resource::Resource;
+
 use crate::{Position, field::ResourceField, graph::VertexId};
 
 /// Owned field and vertex state at a completed tick.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SimulationSnapshot {
-    /// Seed used to generate the field and choose the initial vertex position.
+    /// Seed used to generate the initial field and choose the starting vertex position.
     pub seed: u32,
+    /// Seed used to generate the current field, including any reseed during the run.
+    pub field_seed: u32,
     /// Number of completed ticks, starting at zero.
     pub tick: u64,
     /// Elapsed model time, calculated as the completed tick count times the timestep.
@@ -38,7 +42,7 @@ pub struct SnapshotPublisher {
 }
 
 /// Reads the latest publication and can retain it across updates.
-#[derive(Clone)]
+#[derive(Clone, Resource)]
 pub struct SnapshotReader {
     current: Arc<Mutex<Arc<SimulationSnapshot>>>,
 }
