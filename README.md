@@ -45,6 +45,16 @@ where:
   some proportion $0 \leq r \leq 1$. Thus, an amount $(1 - r) x$ is consumed/lost as a
   cost for resource extraction.
 
+Some examples for $\eta$ include:
+
+- $\eta(x, y, t) = r$, for $0 \leq r \leq 1$, which describes a constant, uniform
+  efficacy across vertices.
+- $\eta$ may decrease based on the number of neighbours within some radius. This results
+  in vertices that become less efficicent as it becomes more croweded.
+- $\eta$ may decrease as the number of edge connections increases, resulting in a
+  similar behaviour as the previous example, except without consideration of spacial
+  locality. Unlike the previous example, this case only considers _connected_ vertices.
+
 In this simulation, we describe $U$ with saturated scaling:
 
 ```math
