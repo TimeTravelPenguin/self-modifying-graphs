@@ -29,6 +29,14 @@ where:
   external intake.
 - $U(x, y, t)$ is how much resource is extracted by the vertex at $(x, y)$ and time $t$.
 
+> [!NOTE]
+> Future work will look into the case where $D = D(x, y, t)$ or where diffusion is variant
+> over some topology. For example, diffusion may be higher when moving into lower regions.
+>
+> Similar considerations can also be given to graph edges, resulting in edges transferring
+> energy between vertices at different rates when moving resources to vertices higher
+> regions.
+
 ### Vertex Resource Collection
 
 We define $Q(x, y, t)$, which denotes how much resource is collected and stored by a
