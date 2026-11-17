@@ -11,6 +11,10 @@ Graph vertices lie on a lattice. At each timestep, each node collects some amoun
 resources from the environment. The amount collected is proportional to how much is
 currently located at that vertex.
 
+## Simulation Details
+
+### Resource Environment
+
 The environment diffuses its resources over time, as described by the following PDE:
 
 ```math
@@ -24,6 +28,8 @@ where:
 - $S(x, y, t)$ is how much resource is returned to the environment, such as through an
   external intake.
 - $U(x, y, t)$ is how much resource is extracted by the vertex at $(x, y)$ and time $t$.
+
+### Vertex Resource Collection
 
 We define $Q(x, y, t)$, which denotes how much resource is collected and stored by a
 vertex at $(x, y)$ and time $t$, as:
@@ -49,6 +55,11 @@ where $q_{\text{max}}$ is the maximum allowed extraction, and $K$ controls how m
 extracted when the resource concentration is low. $K$ is called the
 _half-saturation constant_ and is defined as the concentration of resource at which the
 extraction rate is half of the maximum extraction rate.
+
+### Edge Creation and Removal
+
+> [!NOTE]
+> This section is not yet implemented or formalised. Everything here is subject to change.
 
 ## Acknowledgement of AI Usage
 
