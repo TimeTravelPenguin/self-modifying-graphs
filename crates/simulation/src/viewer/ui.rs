@@ -2,7 +2,7 @@
 
 use crate::{
     graph::VertexId,
-    rendering::{UI_COLORS, heatmap_color},
+    palette::{self, heatmap_color},
     simulation::SimulationSnapshot,
 };
 use bevy::prelude::*;
@@ -136,19 +136,19 @@ fn spawn_header(commands: &mut Commands, snapshot: &SimulationSnapshot) {
                 column_gap: px(16.0),
                 ..default()
             },
-            BackgroundColor(UI_COLORS.surface0.into()),
+            BackgroundColor(palette::HEADER_BACKGROUND),
         ))
         .with_children(|header| {
             header.spawn((
                 Text::new("Graph simulation"),
                 TextFont::from_font_size(21.0),
-                TextColor(UI_COLORS.text.into()),
+                TextColor(palette::TEXT_PRIMARY),
             ));
             header.spawn((
                 UiText::RunStatus,
                 Text::new(status_text(snapshot)),
                 TextFont::from_font_size(15.0),
-                TextColor(UI_COLORS.subtext1.into()),
+                TextColor(palette::TEXT_SECONDARY),
             ));
         });
 }
@@ -177,7 +177,7 @@ fn spawn_legend(commands: &mut Commands, (min, max): (f64, f64)) {
                 UiText::LegendMinimum,
                 Text::new(legend_minimum(min)),
                 TextFont::from_font_size(14.0),
-                TextColor(UI_COLORS.subtext1.into()),
+                TextColor(palette::TEXT_SECONDARY),
             ));
             legend.spawn(Node::default()).with_children(|scale| {
                 for index in 0..12 {
@@ -196,7 +196,7 @@ fn spawn_legend(commands: &mut Commands, (min, max): (f64, f64)) {
                 UiText::LegendMaximum,
                 Text::new(format!("{max:.1}")),
                 TextFont::from_font_size(14.0),
-                TextColor(UI_COLORS.subtext1.into()),
+                TextColor(palette::TEXT_SECONDARY),
             ));
         });
 }
@@ -216,20 +216,20 @@ fn spawn_inspector(commands: &mut Commands, snapshot: &SimulationSnapshot) {
                 row_gap: px(8.0),
                 ..default()
             },
-            BackgroundColor(UI_COLORS.mantle.into()),
+            BackgroundColor(palette::INSPECTOR_BACKGROUND),
         ))
         .with_children(|inspector| {
             inspector.spawn((
                 Text::new("Vertex inspector"),
                 TextFont::from_font_size(18.0),
-                TextColor(UI_COLORS.text.into()),
+                TextColor(palette::TEXT_PRIMARY),
             ));
             inspector.spawn((
                 UiRegion::InspectorPrompt,
                 UiText::InspectorPrompt,
                 Text::new(inspector_prompt(snapshot)),
                 TextFont::from_font_size(15.0),
-                TextColor(UI_COLORS.subtext1.into()),
+                TextColor(palette::TEXT_SECONDARY),
             ));
             inspector
                 .spawn((
@@ -258,13 +258,13 @@ fn spawn_inspector(commands: &mut Commands, snapshot: &SimulationSnapshot) {
                                 row.spawn((
                                     Text::new(heading),
                                     TextFont::from_font_size(12.0),
-                                    TextColor(UI_COLORS.subtext1.into()),
+                                    TextColor(palette::TEXT_SECONDARY),
                                 ));
                                 row.spawn((
                                     label,
                                     Text::default(),
                                     TextFont::from_font_size(16.0),
-                                    TextColor(UI_COLORS.text.into()),
+                                    TextColor(palette::TEXT_PRIMARY),
                                 ));
                             });
                     }

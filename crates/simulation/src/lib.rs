@@ -8,6 +8,7 @@
 pub mod field;
 pub mod graph;
 pub mod normalization;
+pub mod palette;
 pub mod plugin;
 pub mod rendering;
 pub mod simulation;

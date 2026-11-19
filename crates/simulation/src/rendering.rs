@@ -2,10 +2,12 @@
 
 use bevy::prelude::*;
 
-use crate::{Position, field::ResourceField, normalization::BoundsNormalizer};
+use crate::{
+    Position, field::ResourceField, normalization::BoundsNormalizer,
+    palette::contrasting_text_color,
+};
 
-/// Catppuccin Mocha colours for general application styling.
-pub const UI_COLORS: catppuccin::FlavorColors = catppuccin::PALETTE.mocha.colors;
+pub use crate::palette::{UI_COLORS, heatmap_color};
 
 const FONT_SIZE: f32 = 0.0;
 /// Width and height of a heatmap cell in Bevy world units.
@@ -117,31 +119,5 @@ pub fn redraw_heatmap(
                 }
             }
         }
-    }
-}
-
-fn contrasting_text_color(background: Color) -> Color {
-    let rgb = background.to_linear();
-    let luminance = 0.2126 * rgb.red + 0.7152 * rgb.green + 0.0722 * rgb.blue;
-
-    if luminance > 0.179 {
-        Color::BLACK
-    } else {
-        Color::WHITE
-    }
-}
-
-/// Returns the resource colour at a normalized value clamped to `[0, 1]`.
-pub fn heatmap_color(t: f32) -> Color {
-    const MIN: Color = Color::linear_rgb(35.0 / 255.0, 55.0 / 255.0, 140.0 / 255.0);
-    const MID: Color = Color::linear_rgb(37.0 / 255.0, 173.0 / 255.0, 154.0 / 255.0);
-    const MAX: Color = Color::linear_rgb(253.0 / 255.0, 220.0 / 255.0, 70.0 / 255.0);
-
-    let t = t.clamp(0.0, 1.0);
-
-    if t < 0.5 {
-        MIN.mix(&MID, t * 2.0)
-    } else {
-        MID.mix(&MAX, (t - 0.5) * 2.0)
     }
 }

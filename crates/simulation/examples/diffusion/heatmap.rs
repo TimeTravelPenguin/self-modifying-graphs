@@ -10,7 +10,7 @@ use simulation::{
 pub(super) use simulation::rendering::{Heatmap, spawn_heatmap};
 
 #[cfg(test)]
-pub(super) use simulation::rendering::heatmap_color;
+pub(super) use simulation::palette::heatmap_color;
 
 pub(super) fn update_heatmap(
     heatmap: Res<Heatmap>,

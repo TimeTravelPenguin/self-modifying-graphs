@@ -10,7 +10,8 @@ use crate::{
     Position,
     graph::VertexId,
     normalization::{BoundsAveraging, BoundsNormalizer},
-    rendering::{Heatmap, TILE_SIZE, Tile, UI_COLORS, cell_center, redraw_heatmap, spawn_heatmap},
+    palette,
+    rendering::{Heatmap, TILE_SIZE, Tile, cell_center, redraw_heatmap, spawn_heatmap},
     simulation::{SimulationSnapshot, SnapshotReader},
 };
 use bevy::{prelude::*, sprite::SpriteAlphaMode, window::PrimaryWindow};
@@ -39,7 +40,7 @@ impl ViewerPlugin {
 
 impl Plugin for ViewerPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(UI_COLORS.base.into()))
+        app.insert_resource(ClearColor(palette::BACKGROUND))
             .insert_resource(SnapshotView {
                 displayed: None,
                 selected: None,
@@ -173,7 +174,7 @@ fn spawn_marker(commands: &mut Commands, id: VertexId, center: Vec2) {
             VertexMarker(id),
             Sprite {
                 alpha_mode: SpriteAlphaMode::Opaque,
-                ..Sprite::from_color(UI_COLORS.crust, Vec2::splat(MARKER_SIZE))
+                ..Sprite::from_color(palette::MARKER_OUTLINE, Vec2::splat(MARKER_SIZE))
             },
             Transform::from_translation(center.extend(1.0))
                 .with_rotation(Quat::from_rotation_z(FRAC_PI_4)),
@@ -181,7 +182,7 @@ fn spawn_marker(commands: &mut Commands, id: VertexId, center: Vec2) {
         .with_child((
             Sprite {
                 alpha_mode: SpriteAlphaMode::Opaque,
-                ..Sprite::from_color(UI_COLORS.rosewater, Vec2::splat(TILE_SIZE * 1.25))
+                ..Sprite::from_color(palette::MARKER_FILL, Vec2::splat(TILE_SIZE * 1.25))
             },
             Transform::from_xyz(0.0, 0.0, 0.1),
         ));
@@ -292,13 +293,13 @@ fn update_display(
 
     for (marker, mut sprite, mut transform) in &mut markers {
         let (outline, depth) = if view.selected == Some(marker.0) {
-            (UI_COLORS.lavender, 2.0)
+            (palette::SELECTED_MARKER_OUTLINE, 2.0)
         } else {
-            (UI_COLORS.crust, 1.0)
+            (palette::MARKER_OUTLINE, 1.0)
         };
 
-        if sprite.color != Color::from(outline) {
-            sprite.color = outline.into();
+        if sprite.color != outline {
+            sprite.color = outline;
         }
 
         if transform.translation.z != depth {

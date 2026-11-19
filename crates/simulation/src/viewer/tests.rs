@@ -1,15 +1,16 @@
 use std::f64::consts::LN_2;
 
-use bevy::{prelude::*, window::PrimaryWindow};
-use simulation::{
+use crate::{
     field::{Neighbourhood, ResourceField},
     graph::{Graph, Uptake, VertexId},
     normalization::{BoundsAveraging, BoundsNormalizer},
-    rendering::{Heatmap, cell_center, heatmap_color},
+    palette::{self, heatmap_color},
+    rendering::{Heatmap, cell_center},
     simulation::{
         SimulationConfig, SimulationRun, SimulationSnapshot, SnapshotPublisher, VertexSnapshot,
     },
 };
+use bevy::{prelude::*, window::PrimaryWindow};
 use slotmap::Key;
 
 use super::{
@@ -128,7 +129,10 @@ fn reconciles_vertices_by_id_and_follows_live_selected_values() {
     let window = show_window(&mut app);
     let world = app.world_mut();
     let original = marker_entity(world, initial.id).unwrap();
-    let original_outline = world.get::<Sprite>(original).unwrap().color;
+    assert_eq!(
+        world.get::<Sprite>(original).unwrap().color,
+        palette::MARKER_OUTLINE
+    );
 
     assert_eq!(
         world
@@ -156,9 +160,9 @@ fn reconciles_vertices_by_id_and_follows_live_selected_values() {
             .tick,
         0
     );
-    assert_ne!(
+    assert_eq!(
         world.get::<Sprite>(original).unwrap().color,
-        original_outline
+        palette::SELECTED_MARKER_OUTLINE
     );
     assert_eq!(
         ui_text(world, UiText::VertexId),
@@ -249,6 +253,13 @@ fn selects_nearest_overlapping_marker_and_ignores_clicks_on_ui() {
         .press(KeyCode::Escape);
     app.update();
     assert_eq!(app.world().resource::<SnapshotView>().selected, None);
+
+    let world = app.world_mut();
+    let marker = marker_entity(world, adjacent.id).unwrap();
+    assert_eq!(
+        world.get::<Sprite>(marker).unwrap().color,
+        palette::MARKER_OUTLINE
+    );
 }
 
 #[test]

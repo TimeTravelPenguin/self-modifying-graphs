@@ -1,9 +1,7 @@
 //! Displays the active diffusion settings and normalization bounds.
 
 use bevy::prelude::*;
-use simulation::{
-    DiffusionConfig, SimulationTime, normalization::BoundsNormalizer, rendering::UI_COLORS,
-};
+use simulation::{DiffusionConfig, SimulationTime, normalization::BoundsNormalizer, palette};
 
 #[derive(Component)]
 pub(super) struct OnScreenInfo;
@@ -29,13 +27,13 @@ pub(super) fn spawn_on_screen_info(
             parent.spawn((
                 Text::new("Simulation Info"),
                 TextFont::from_font_size(20.0),
-                TextColor(UI_COLORS.text.into()),
+                TextColor(palette::TEXT_PRIMARY),
             ));
             parent.spawn((
                 OnScreenInfo,
                 Text::new(on_screen_info_text(diffusion, bounds, time)),
                 TextFont::from_font_size(14.0),
-                TextColor(UI_COLORS.subtext1.into()),
+                TextColor(palette::TEXT_SECONDARY),
             ));
         });
 }
