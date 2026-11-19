@@ -9,13 +9,11 @@ use bevy::{prelude::*, window::WindowResizeConstraints};
 use bevy_rand::{global::GlobalRng, prelude::ChaCha12Rng};
 use rand::RngExt;
 use simulation::{
-    DiffusionConfig, SimulationControls, SimulationPlugin,
+    DiffusionConfig, SimulationControls, SimulationPlugin, ViewerPlugin,
     field::Neighbourhood,
     graph::{Uptake, VertexConfig},
     normalization::{BoundsAveraging, BoundsNormalizer},
 };
-
-mod viewer;
 
 const STEP_INTERVAL: Duration = Duration::from_millis(100);
 const MODEL_TIMESTEP: Duration = Duration::from_millis(100);
@@ -33,6 +31,9 @@ fn main() -> AppExit {
         .with_model_timestep(MODEL_TIMESTEP)
         .with_starting_vertex(vertex_config);
 
+    let normalizer = BoundsNormalizer::new(BoundsAveraging::EMA { tau: 10.0 });
+    let viewer = ViewerPlugin::new(normalizer);
+
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {
@@ -49,7 +50,7 @@ fn main() -> AppExit {
             ..default()
         }),
         simulation,
-        viewer::ViewerPlugin::new(BoundsNormalizer::new(BoundsAveraging::EMA { tau: 10.0 })),
+        viewer,
     ));
 
     app.add_systems(Update, handle_keyboard_input);

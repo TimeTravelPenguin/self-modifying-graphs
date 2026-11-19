@@ -1,11 +1,11 @@
 //! Header, heatmap legend, and selected vertex details.
 
-use bevy::prelude::*;
-use simulation::{
+use crate::{
     graph::VertexId,
     rendering::{UI_COLORS, heatmap_color},
     simulation::SimulationSnapshot,
 };
+use bevy::prelude::*;
 use slotmap::Key;
 
 use super::layout::ViewerLayout;

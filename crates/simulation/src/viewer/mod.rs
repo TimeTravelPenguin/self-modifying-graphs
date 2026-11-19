@@ -6,14 +6,14 @@ use std::{
     sync::Arc,
 };
 
-use bevy::{prelude::*, sprite::SpriteAlphaMode, window::PrimaryWindow};
-use simulation::{
+use crate::{
     Position,
     graph::VertexId,
     normalization::{BoundsAveraging, BoundsNormalizer},
     rendering::{Heatmap, TILE_SIZE, Tile, UI_COLORS, cell_center, redraw_heatmap, spawn_heatmap},
     simulation::{SimulationSnapshot, SnapshotReader},
 };
+use bevy::{prelude::*, sprite::SpriteAlphaMode, window::PrimaryWindow};
 
 mod layout;
 mod ui;
@@ -23,7 +23,7 @@ use layout::{FieldView, ViewerLayout};
 const MARKER_SIZE: f32 = TILE_SIZE * 1.9;
 
 /// Draws completed snapshots from the app's [`SnapshotReader`] resource.
-pub(super) struct ViewerPlugin {
+pub struct ViewerPlugin {
     bounds_normalizer: BoundsNormalizer,
 }
 
@@ -32,7 +32,7 @@ impl ViewerPlugin {
     ///
     /// The default normalizer holds the scale fixed until the field is reseeded.
     /// Exponential averaging also samples each newly displayed snapshot.
-    pub(super) fn new(bounds_normalizer: BoundsNormalizer) -> Self {
+    pub fn new(bounds_normalizer: BoundsNormalizer) -> Self {
         Self { bounds_normalizer }
     }
 }

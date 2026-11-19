@@ -13,9 +13,11 @@ pub mod rendering;
 pub mod simulation;
 
 mod position;
+mod viewer;
 
 pub use plugin::{
     DiffusionConfig, SimulationControls, SimulationPlugin, SimulationSet, SimulationStartup,
     SimulationStep, SimulationTime,
 };
 pub use position::Position;
+pub use viewer::ViewerPlugin;
