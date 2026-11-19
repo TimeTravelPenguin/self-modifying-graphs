@@ -10,8 +10,9 @@ use bevy_rand::{global::GlobalRng, prelude::ChaCha12Rng};
 use rand::RngExt;
 use simulation::{
     DiffusionConfig, SimulationControls, SimulationPlugin, ViewerPlugin,
+    effects::{Effect, EffectInput, EffectTarget, EffectsConfig, ResponseCurve},
     field::Neighbourhood,
-    graph::{Uptake, VertexConfig},
+    graph::{HealthConfig, Uptake, VertexConfig},
     normalization::{BoundsAveraging, BoundsNormalizer},
 };
 
@@ -20,7 +21,39 @@ const MODEL_TIMESTEP: Duration = Duration::from_millis(100);
 
 fn main() -> AppExit {
     let uptake = Uptake::saturating(20.0, 10.0, 0.75).expect("invalid uptake parameters");
-    let vertex_config = VertexConfig::new(uptake, 1.2).expect("invalid vertex config parameters");
+    let effects = EffectsConfig::new([
+        Effect {
+            input: EffectInput::HealthFraction,
+            target: EffectTarget::UptakeCapacity,
+            response: ResponseCurve::Linear {
+                input_start: 0.0,
+                input_end: 1.0,
+                output_start: 0.2,
+                output_end: 1.0,
+            },
+        },
+        Effect {
+            input: EffectInput::Age,
+            target: EffectTarget::UptakeCapacity,
+            response: ResponseCurve::ExponentialDecay {
+                half_life: 200.0,
+                minimum: 0.2,
+            },
+        },
+        Effect {
+            input: EffectInput::Age,
+            target: EffectTarget::RecoveryAmount,
+            response: ResponseCurve::ExponentialDecay {
+                half_life: 100.0,
+                minimum: 0.1,
+            },
+        },
+    ])
+    .expect("invalid effect parameters");
+
+    let vertex_config = VertexConfig::new(uptake, 1.2, HealthConfig::default())
+        .and_then(|config| config.with_effects(effects))
+        .expect("invalid vertex config parameters");
     let simulation = SimulationPlugin::default()
         .with_diffusion(DiffusionConfig::Enabled {
             neighbourhood: Neighbourhood::Moore,

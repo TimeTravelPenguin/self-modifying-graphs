@@ -12,7 +12,7 @@ use simulation::{
     DiffusionConfig, SimulationControls, SimulationPlugin, SimulationSet, SimulationStartup,
     SimulationStep, SimulationTime,
     field::{Neighbourhood, ResourceField},
-    graph::Uptake,
+    graph::{HealthConfig, Uptake, VertexConfig},
     normalization::BoundsNormalizer,
     simulation::SnapshotReader,
 };
@@ -25,14 +25,15 @@ struct ScheduleRuns {
 
 #[test]
 fn starting_vertex_uses_the_worker_and_reseeds_its_field() {
-    let uptake = Uptake::new(1.0, 1.0).unwrap();
+    let vertex_config =
+        VertexConfig::new(Uptake::new(1.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
     let mut app = App::new();
     app.add_plugins(
         SimulationPlugin::default()
             .with_dimensions(3, 2)
             .with_seed(7)
             .with_step_interval(Duration::from_millis(20))
-            .with_starting_vertex(uptake),
+            .with_starting_vertex(vertex_config),
     );
 
     let world = app.world();

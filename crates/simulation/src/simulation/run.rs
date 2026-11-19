@@ -1,6 +1,7 @@
 use crate::{
+    effects::EffectsConfig,
     field::{DiffusionError, Neighbourhood, ResourceField},
-    graph::{Graph, VertexConfig},
+    graph::{Graph, VertexConfig, VertexId},
 };
 
 use super::{Simulation, SimulationConfig, SimulationError, SimulationSnapshot, VertexSnapshot};
@@ -15,7 +16,7 @@ use super::{Simulation, SimulationConfig, SimulationError, SimulationSnapshot, V
 /// ```no_run,standalone_crate
 /// use simulation::{
 ///     field::Neighbourhood,
-///     graph::Uptake,
+///     graph::{HealthConfig, Uptake, VertexConfig},
 ///     simulation::{SimulationConfig, SimulationRun, SnapshotPublisher},
 /// };
 ///
@@ -31,7 +32,8 @@ use super::{Simulation, SimulationConfig, SimulationError, SimulationSnapshot, V
 /// };
 ///
 /// let uptake = Uptake::new(1.0, 0.8).unwrap();
-/// let mut run = SimulationRun::single_vertex_from_seed(config, 42, uptake, 0.1)?;
+/// let vertex = VertexConfig::new(uptake, 0.0, HealthConfig::default())?;
+/// let mut run = SimulationRun::single_vertex_from_seed(config, 42, vertex, 0.1)?;
 /// let mut publisher = SnapshotPublisher::new(run.snapshot());
 /// let reader = publisher.reader();
 /// let initial = reader.latest();
@@ -82,7 +84,7 @@ impl SimulationRun {
     pub fn single_vertex_from_seed(
         config: SimulationConfig,
         seed: u32,
-        vertex_config: impl Into<VertexConfig>,
+        vertex_config: VertexConfig,
         dt: f64,
     ) -> Result<Self, SimulationError> {
         if dt == 0.0 {
@@ -105,7 +107,7 @@ impl SimulationRun {
 
     /// Completes exactly one simulation tick.
     ///
-    /// Applies diffusion, uptake, and living costs before incrementing the completed tick count.
+    /// Applies diffusion, uptake, costs, health, aging, and death before advancing the tick count.
     ///
     /// # Panics
     ///
@@ -114,6 +116,24 @@ impl SimulationRun {
         let next_tick = self.tick.checked_add(1).expect("simulation tick overflow");
         self.simulation.step(self.dt);
         self.tick = next_tick;
+    }
+
+    /// Replaces a live vertex's effects for the next call to [`Self::advance`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Simulation::set_vertex_effects`].
+    pub fn set_vertex_effects(
+        &mut self,
+        vertex_id: VertexId,
+        effects: EffectsConfig,
+    ) -> Result<u64, SimulationError> {
+        self.simulation.set_vertex_effects(vertex_id, effects)
+    }
+
+    /// Number of completed ticks.
+    pub fn tick(&self) -> u64 {
+        self.tick
     }
 
     /// Switches to the other diffusion stencil if it is stable at this run's timestep.
@@ -162,6 +182,12 @@ impl SimulationRun {
                 id,
                 position: vertex.position(),
                 stored_resource: vertex.stored_resource(),
+                age: vertex.age(),
+                health: vertex.health(),
+                config: vertex.config().clone(),
+                effects_revision: vertex.effects_revision(),
+                effective_effects: vertex.effective_effects(),
+                effective_recovery: vertex.effective_recovery(),
             })
             .collect();
 

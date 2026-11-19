@@ -1,6 +1,6 @@
 use simulation::{
     field::Neighbourhood,
-    graph::Uptake,
+    graph::{HealthConfig, Uptake, VertexConfig},
     simulation::{Simulation, SimulationConfig, SimulationError},
 };
 
@@ -19,10 +19,13 @@ fn config(width: u32, height: u32) -> SimulationConfig {
 #[test]
 fn seed_reproduces_the_field_and_single_vertex() {
     let seed = 42;
-    let uptake = Uptake::new(5.0, 1.0).unwrap();
+    let vertex_config =
+        VertexConfig::new(Uptake::new(5.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
     let empty = Simulation::from_seed(config(9, 7), seed);
-    let mut simulation = Simulation::single_vertex_from_seed(config(9, 7), seed, uptake).unwrap();
-    let replay = Simulation::single_vertex_from_seed(config(9, 7), seed, uptake).unwrap();
+    let mut simulation =
+        Simulation::single_vertex_from_seed(config(9, 7), seed, vertex_config.clone()).unwrap();
+    let replay =
+        Simulation::single_vertex_from_seed(config(9, 7), seed, vertex_config.clone()).unwrap();
 
     let field = simulation.field();
     assert_eq!((field.width(), field.height()), (9, 7));
@@ -56,11 +59,12 @@ fn seed_reproduces_the_field_and_single_vertex() {
 
 #[test]
 fn single_vertex_startup_rejects_either_empty_dimension() {
-    let uptake = Uptake::new(5.0, 1.0).unwrap();
+    let vertex_config =
+        VertexConfig::new(Uptake::new(5.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
 
     for (width, height) in [(0, 7), (9, 0)] {
         assert!(matches!(
-            Simulation::single_vertex_from_seed(config(width, height), 42, uptake),
+            Simulation::single_vertex_from_seed(config(width, height), 42, vertex_config.clone()),
             Err(SimulationError::EmptyGrid)
         ));
     }

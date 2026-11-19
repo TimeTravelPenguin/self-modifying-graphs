@@ -5,6 +5,7 @@
 //! [`SimulationPlugin`] provides Bevy schedules for applications that step a resource
 //! field directly in Bevy, including the standalone diffusion example.
 
+pub mod effects;
 pub mod field;
 pub mod graph;
 pub mod normalization;
@@ -17,8 +18,9 @@ mod position;
 mod viewer;
 
 pub use plugin::{
-    DiffusionConfig, SimulationControls, SimulationPlugin, SimulationSet, SimulationStartup,
-    SimulationStep, SimulationTime,
+    DiffusionConfig, EffectUpdateOutcome, EffectUpdateTicket, SimulationControlError,
+    SimulationControls, SimulationPlugin, SimulationSet, SimulationStartup, SimulationStep,
+    SimulationTime,
 };
 pub use position::Position;
 pub use viewer::ViewerPlugin;

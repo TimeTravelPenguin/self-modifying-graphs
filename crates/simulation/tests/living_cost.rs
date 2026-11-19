@@ -1,6 +1,6 @@
 use simulation::{
     field::{Diffuser, Neighbourhood, ResourceField},
-    graph::{Uptake, Vertex, VertexConfig, VertexId},
+    graph::{HealthConfig, Uptake, Vertex, VertexConfig, VertexId},
     simulation::{Simulation, SimulationConfig, SimulationRun},
 };
 
@@ -20,9 +20,14 @@ fn vertex(simulation: &Simulation, id: VertexId) -> &Vertex {
 fn vertices_pay_their_own_cost_from_stored_resources_after_uptake() {
     let mut simulation = simulation_with_amounts(&[8.0, 8.0, 8.0]);
     let uptake = Uptake::new(4.0, 0.5).unwrap();
-    let low_cost = VertexConfig::new(uptake, 1.0).unwrap();
-    let high_cost = VertexConfig::new(uptake, 3.0).unwrap();
-    let free = simulation.add_vertex((0, 0), uptake).unwrap();
+    let low_cost = VertexConfig::new(uptake, 1.0, HealthConfig::default()).unwrap();
+    let high_cost = VertexConfig::new(uptake, 3.0, HealthConfig::default()).unwrap();
+    let free = simulation
+        .add_vertex(
+            (0, 0),
+            VertexConfig::new(uptake, 0.0, HealthConfig::Disabled).unwrap(),
+        )
+        .unwrap();
     let low = simulation.add_vertex((1, 0), low_cost).unwrap();
     let high = simulation.add_vertex((2, 0), high_cost).unwrap();
 
@@ -48,7 +53,7 @@ fn vertices_pay_their_own_cost_from_stored_resources_after_uptake() {
 fn a_vertex_can_recover_after_it_cannot_pay_the_full_cost() {
     let mut simulation = simulation_with_amounts(&[10.0]);
     let uptake = Uptake::new(4.0, 0.5).unwrap();
-    let config = VertexConfig::new(uptake, 1.0).unwrap();
+    let config = VertexConfig::new(uptake, 1.0, HealthConfig::default()).unwrap();
     let id = simulation.add_vertex((0, 0), config).unwrap();
 
     simulation.step(0.25);
@@ -67,10 +72,10 @@ fn living_cost_must_be_finite_and_nonnegative() {
     let uptake = Uptake::new(4.0, 0.5).unwrap();
 
     for amount in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(VertexConfig::new(uptake, amount).is_none());
+        assert!(VertexConfig::new(uptake, amount, HealthConfig::default()).is_err());
     }
 
-    assert!(VertexConfig::new(uptake, 0.0).is_some());
+    assert!(VertexConfig::new(uptake, 0.0, HealthConfig::default()).is_ok());
 }
 
 #[test]
@@ -86,7 +91,7 @@ fn seeded_runs_apply_the_configured_cost() {
     };
 
     let uptake = Uptake::new(4.0, 1.0).unwrap();
-    let vertex = VertexConfig::new(uptake, 1.5).unwrap();
+    let vertex = VertexConfig::new(uptake, 1.5, HealthConfig::default()).unwrap();
     let mut run = SimulationRun::single_vertex_from_seed(config, 42, vertex, 0.5).unwrap();
 
     run.advance();

@@ -8,7 +8,7 @@ mod edges;
 mod vertices;
 
 pub use edges::{AddEdgeError, Edge, EdgeId};
-pub use vertices::{Uptake, Vertex, VertexConfig, VertexId};
+pub use vertices::{HealthConfig, Uptake, Vertex, VertexConfig, VertexConfigError, VertexId};
 
 /// Mutable undirected graph with at most one edge per unordered endpoint pair.
 ///
@@ -31,8 +31,8 @@ impl Graph {
     ///
     /// Positions are stored as supplied. Use the simulation's placement API to
     /// enforce field boundaries and cell occupancy.
-    pub fn add_vertex(&mut self, position: Position, config: impl Into<VertexConfig>) -> VertexId {
-        self.vertices.insert(Vertex::new(position, config.into()))
+    pub fn add_vertex(&mut self, position: Position, config: VertexConfig) -> VertexId {
+        self.vertices.insert(Vertex::new(position, config))
     }
 
     /// Removes a vertex and its incident edges, including any self-loop.
@@ -60,8 +60,12 @@ impl Graph {
     }
 
     /// Iterates mutably over live vertices for an in-place simulation step.
-    pub(crate) fn vertices_mut(&mut self) -> impl Iterator<Item = &mut Vertex> {
-        self.vertices.values_mut()
+    pub(crate) fn vertices_mut(&mut self) -> impl Iterator<Item = (VertexId, &mut Vertex)> {
+        self.vertices.iter_mut()
+    }
+
+    pub(crate) fn vertex_mut(&mut self, vertex_id: VertexId) -> Option<&mut Vertex> {
+        self.vertices.get_mut(vertex_id)
     }
 
     /// Inserts an undirected edge between two live vertices.
@@ -171,14 +175,15 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
-    use super::{AddEdgeError, Graph, Uptake};
+    use super::{AddEdgeError, Graph, HealthConfig, Uptake, VertexConfig};
 
     #[test]
     fn undirected_edges_and_self_loops_have_one_record() {
         let mut graph = Graph::new();
-        let uptake = Uptake::new(0.0, 1.0).unwrap();
-        let from = graph.add_vertex((0, 0).into(), uptake);
-        let to = graph.add_vertex((1, 0).into(), uptake);
+        let config =
+            VertexConfig::new(Uptake::new(0.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
+        let from = graph.add_vertex((0, 0).into(), config.clone());
+        let to = graph.add_vertex((1, 0).into(), config.clone());
 
         let edge = graph.add_edge(from, to).unwrap();
         let self_loop = graph.add_edge(from, from).unwrap();
@@ -211,10 +216,11 @@ mod tests {
     #[test]
     fn vertex_removal_unlinks_edges_and_invalidates_ids() {
         let mut graph = Graph::new();
-        let uptake = Uptake::new(0.0, 1.0).unwrap();
-        let center = graph.add_vertex((0, 0).into(), uptake);
-        let left = graph.add_vertex((1, 0).into(), uptake);
-        let right = graph.add_vertex((2, 0).into(), uptake);
+        let config =
+            VertexConfig::new(Uptake::new(0.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
+        let center = graph.add_vertex((0, 0).into(), config.clone());
+        let left = graph.add_vertex((1, 0).into(), config.clone());
+        let right = graph.add_vertex((2, 0).into(), config.clone());
 
         let left_edge = graph.add_edge(left, center).unwrap();
         let right_edge = graph.add_edge(center, right).unwrap();
@@ -222,7 +228,7 @@ mod tests {
         let surviving_edge = graph.add_edge(left, right).unwrap();
 
         graph.remove_vertex(center).unwrap();
-        let replacement = graph.add_vertex((0, 0).into(), uptake);
+        let replacement = graph.add_vertex((0, 0).into(), config.clone());
         let replacement_edge = graph.add_edge(replacement, left).unwrap();
 
         assert_ne!(replacement, center);

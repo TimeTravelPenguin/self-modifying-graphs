@@ -2,7 +2,7 @@ use std::thread;
 
 use simulation::{
     field::Neighbourhood,
-    graph::Uptake,
+    graph::{HealthConfig, Uptake, VertexConfig},
     simulation::{SimulationConfig, SimulationRun, SnapshotPublisher},
 };
 
@@ -20,8 +20,10 @@ fn reader_keeps_initial_snapshot_while_worker_publishes_completed_ticks() {
 
     let seed = 42;
     let dt = 0.125;
-    let uptake = Uptake::new(5.0, 1.0).unwrap();
-    let mut run = SimulationRun::single_vertex_from_seed(config, seed, uptake, dt).unwrap();
+    let vertex_config =
+        VertexConfig::new(Uptake::new(5.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
+    let mut run =
+        SimulationRun::single_vertex_from_seed(config, seed, vertex_config.clone(), dt).unwrap();
     let initial_field = run.view().field.clone();
     let mut publisher = SnapshotPublisher::new(run.snapshot());
     let reader = publisher.reader();

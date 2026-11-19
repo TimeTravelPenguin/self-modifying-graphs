@@ -1,6 +1,6 @@
 use simulation::{
     field::{Diffuser, Neighbourhood, ResourceField},
-    graph::Uptake,
+    graph::{HealthConfig, Uptake, VertexConfig},
     simulation::Simulation,
 };
 
@@ -45,7 +45,14 @@ fn constant_and_saturating_vertices_use_the_same_resource_accounting() {
     ]
     .into_iter()
     .enumerate()
-    .map(|(x, uptake)| simulation.add_vertex((x, 0), uptake).unwrap())
+    .map(|(x, uptake)| {
+        simulation
+            .add_vertex(
+                (x, 0),
+                VertexConfig::new(uptake, 0.0, HealthConfig::Disabled).unwrap(),
+            )
+            .unwrap()
+    })
     .collect();
 
     simulation.step(0.0);
@@ -80,7 +87,12 @@ fn constant_and_saturating_vertices_use_the_same_resource_accounting() {
 fn saturating_uptake_handles_a_sum_that_would_overflow() {
     let mut simulation = simulation_with_amounts(&[f64::MAX]);
     let uptake = Uptake::saturating(f64::MAX, f64::MAX, 1.0).unwrap();
-    let vertex_id = simulation.add_vertex((0, 0), uptake).unwrap();
+    let vertex_id = simulation
+        .add_vertex(
+            (0, 0),
+            VertexConfig::new(uptake, 0.0, HealthConfig::Disabled).unwrap(),
+        )
+        .unwrap();
 
     simulation.step(1.0);
 

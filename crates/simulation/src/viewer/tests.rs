@@ -1,8 +1,9 @@
 use std::f64::consts::LN_2;
 
 use crate::{
+    effects::EffectMultipliers,
     field::{Neighbourhood, ResourceField},
-    graph::{Graph, Uptake, VertexId},
+    graph::{Graph, HealthConfig, Uptake, VertexConfig, VertexId},
     normalization::{BoundsAveraging, BoundsNormalizer},
     palette::{self, heatmap_color},
     rendering::{Heatmap, cell_center},
@@ -93,18 +94,32 @@ fn click(app: &mut App, window: Entity, point: Vec2) {
 fn adjacent_vertices() -> (SimulationSnapshot, VertexSnapshot) {
     let mut graph = Graph::new();
     let uptake = Uptake::new(1.0, 1.0).unwrap();
+    let config = VertexConfig::new(uptake, 0.0, HealthConfig::default()).unwrap();
     let position = (4, 2).into();
     let initial = VertexSnapshot {
-        id: graph.add_vertex(position, uptake),
+        id: graph.add_vertex(position, config.clone()),
         position,
         stored_resource: 2.5,
+        age: 0.0,
+        health: Some(10.0),
+        config,
+        effects_revision: 0,
+        effective_effects: EffectMultipliers::default(),
+        effective_recovery: Some(0.25),
     };
 
+    let config = VertexConfig::new(uptake, 0.0, HealthConfig::Disabled).unwrap();
     let position = (5, 2).into();
     let adjacent = VertexSnapshot {
-        id: graph.add_vertex(position, uptake),
+        id: graph.add_vertex(position, config.clone()),
         position,
         stored_resource: 0.0,
+        age: 0.0,
+        health: None,
+        config,
+        effects_revision: 0,
+        effective_effects: EffectMultipliers::default(),
+        effective_recovery: None,
     };
 
     let field = ResourceField::new_random(7, 11, 42, 10.0, 0.0);
@@ -123,7 +138,7 @@ fn adjacent_vertices() -> (SimulationSnapshot, VertexSnapshot) {
 #[test]
 fn reconciles_vertices_by_id_and_follows_live_selected_values() {
     let (mut snapshot, adjacent) = adjacent_vertices();
-    let initial = snapshot.vertices[0];
+    let initial = snapshot.vertices[0].clone();
     let center = cell_center(&snapshot.field, initial.position);
     let (mut app, mut publisher) = headless_viewer(snapshot.clone(), BoundsNormalizer::default());
     let window = show_window(&mut app);
@@ -171,14 +186,22 @@ fn reconciles_vertices_by_id_and_follows_live_selected_values() {
     assert_eq!(ui_text(world, UiText::CellPosition), "(4, 2)");
     assert_eq!(ui_text(world, UiText::StoredResource), "2.50");
     assert_eq!(ui_text(world, UiText::CellResource), "0.00");
+    assert_eq!(ui_text(world, UiText::Age), "0.0");
+    assert_eq!(ui_text(world, UiText::Health), "10.00 / 10.00");
+    assert_eq!(ui_text(world, UiText::UptakeCapacity), "1.00x");
+    assert_eq!(ui_text(world, UiText::RecoveryPerTick), "0.250");
 
     snapshot.tick = 3;
     snapshot.simulation_time = 0.3;
     snapshot.vertices[0].stored_resource = 7.25;
     snapshot.vertices[0].position = (4, 3).into();
+    snapshot.vertices[0].age = 12.5;
+    snapshot.vertices[0].health = Some(8.25);
+    snapshot.vertices[0].effective_effects.uptake_capacity = 1.5;
+    snapshot.vertices[0].effective_recovery = Some(0.125);
     let cell_index = 3 * snapshot.field.width() + 4;
     snapshot.field.resources_mut()[cell_index] = 12.5;
-    snapshot.vertices.push(adjacent);
+    snapshot.vertices.push(adjacent.clone());
     let next_center = cell_center(&snapshot.field, (4, 3).into());
     publisher.publish(snapshot.clone());
     app.update();
@@ -199,6 +222,10 @@ fn reconciles_vertices_by_id_and_follows_live_selected_values() {
     assert_eq!(ui_text(world, UiText::CellPosition), "(4, 3)");
     assert_eq!(ui_text(world, UiText::StoredResource), "7.25");
     assert_eq!(ui_text(world, UiText::CellResource), "12.50");
+    assert_eq!(ui_text(world, UiText::Age), "12.5");
+    assert_eq!(ui_text(world, UiText::Health), "8.25 / 10.00");
+    assert_eq!(ui_text(world, UiText::UptakeCapacity), "1.50x");
+    assert_eq!(ui_text(world, UiText::RecoveryPerTick), "0.125");
 
     snapshot.tick += 1;
     snapshot.simulation_time += 0.1;
@@ -211,13 +238,15 @@ fn reconciles_vertices_by_id_and_follows_live_selected_values() {
     assert_eq!(world.query::<&VertexMarker>().iter(world).count(), 0);
     assert_eq!(world.resource::<SnapshotView>().selected, None);
     assert_eq!(ui_text(world, UiText::InspectorPrompt), "No live vertices");
+    assert!(ui_text(world, UiText::Health).is_empty());
+    assert!(ui_text(world, UiText::RecoveryPerTick).is_empty());
 }
 
 #[test]
 fn selects_nearest_overlapping_marker_and_ignores_clicks_on_ui() {
     let (mut snapshot, adjacent) = adjacent_vertices();
-    let initial = snapshot.vertices[0];
-    snapshot.vertices.insert(0, adjacent);
+    let initial = snapshot.vertices[0].clone();
+    snapshot.vertices.insert(0, adjacent.clone());
     let initial_center = cell_center(&snapshot.field, initial.position);
     let adjacent_center = cell_center(&snapshot.field, adjacent.position);
     let midpoint = (initial_center + adjacent_center) * 0.5;
@@ -233,6 +262,9 @@ fn selects_nearest_overlapping_marker_and_ignores_clicks_on_ui() {
     let window = show_window(&mut app);
     let point = screen_point(&app, adjacent_center);
     click(&mut app, window, point);
+    let world = app.world_mut();
+    assert_eq!(ui_text(world, UiText::Health), "Disabled");
+    assert_eq!(ui_text(world, UiText::RecoveryPerTick), "Disabled");
 
     let layout = ViewerLayout::new(WINDOW_SIZE);
 
@@ -275,7 +307,8 @@ fn default_normalizer_keeps_the_heatmap_scale_until_reseed() {
     };
 
     let uptake = Uptake::new(10.0, 0.75).unwrap();
-    let mut run = SimulationRun::single_vertex_from_seed(config, 42, uptake, 0.1).unwrap();
+    let vertex = VertexConfig::new(uptake, 0.0, HealthConfig::Disabled).unwrap();
+    let mut run = SimulationRun::single_vertex_from_seed(config, 42, vertex, 0.1).unwrap();
     let (mut app, mut publisher) = headless_viewer(run.snapshot(), BoundsNormalizer::default());
     let world = app.world_mut();
     let tiles = world.resource::<Heatmap>().tiles.clone();
@@ -333,7 +366,8 @@ fn configured_normalizer_smooths_the_heatmap_and_legend_until_reseed() {
     };
 
     let uptake = Uptake::new(1.0, 1.0).unwrap();
-    let run = SimulationRun::single_vertex_from_seed(config, 42, uptake, LN_2 / 2.0).unwrap();
+    let vertex = VertexConfig::new(uptake, 0.0, HealthConfig::Disabled).unwrap();
+    let run = SimulationRun::single_vertex_from_seed(config, 42, vertex, LN_2 / 2.0).unwrap();
     let mut snapshot = run.snapshot();
     snapshot
         .field

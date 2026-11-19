@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 const SIDEBAR_BREAKPOINT: f32 = 900.0;
 const SIDEBAR_WIDTH: f32 = 240.0;
-const STACKED_INSPECTOR_HEIGHT: f32 = 144.0;
+const STACKED_INSPECTOR_HEIGHT: f32 = 224.0;
 const HEADER_HEIGHT: f32 = 60.0;
 const LEGEND_HEIGHT: f32 = 48.0;
 const FIELD_PADDING: f32 = 12.0;
@@ -126,9 +126,9 @@ mod tests {
 
         let narrow = ViewerLayout::new(Vec2::new(760.0, 740.0));
         assert!(narrow.compact);
-        assert_eq!(narrow.field, Rect::new(0.0, 60.0, 760.0, 548.0));
-        assert_eq!(narrow.legend, Rect::new(0.0, 548.0, 760.0, 596.0));
-        assert_eq!(narrow.inspector, Rect::new(0.0, 596.0, 760.0, 740.0));
+        assert_eq!(narrow.field, Rect::new(0.0, 60.0, 760.0, 468.0));
+        assert_eq!(narrow.legend, Rect::new(0.0, 468.0, 760.0, 516.0));
+        assert_eq!(narrow.inspector, Rect::new(0.0, 516.0, 760.0, 740.0));
         assert!(ViewerLayout::new(Vec2::new(899.0, 740.0)).compact);
         assert!(!ViewerLayout::new(Vec2::new(900.0, 740.0)).compact);
     }

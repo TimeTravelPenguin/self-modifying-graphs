@@ -1,7 +1,7 @@
 //! Header, heatmap legend, and selected vertex details.
 
 use crate::{
-    graph::VertexId,
+    graph::{HealthConfig, VertexId},
     palette::{self, heatmap_color},
     simulation::SimulationSnapshot,
 };
@@ -29,6 +29,10 @@ pub(super) enum UiText {
     CellPosition,
     StoredResource,
     CellResource,
+    Age,
+    Health,
+    UptakeCapacity,
+    RecoveryPerTick,
     LegendMinimum,
     LegendMaximum,
 }
@@ -112,6 +116,26 @@ pub(super) fn refresh(
                 .unwrap_or_default(),
             UiText::CellResource => cell_resource
                 .map(|amount| format!("{amount:.2}"))
+                .unwrap_or_default(),
+            UiText::Age => vertex
+                .map(|vertex| format!("{:.1}", vertex.age))
+                .unwrap_or_default(),
+            UiText::Health => vertex
+                .map(|vertex| match (vertex.health, vertex.config.health()) {
+                    (Some(health), HealthConfig::Enabled { max_health, .. }) => {
+                        format!("{health:.2} / {max_health:.2}")
+                    }
+                    _ => "Disabled".to_owned(),
+                })
+                .unwrap_or_default(),
+            UiText::UptakeCapacity => vertex
+                .map(|vertex| format!("{:.2}x", vertex.effective_effects.uptake_capacity))
+                .unwrap_or_default(),
+            UiText::RecoveryPerTick => vertex
+                .map(|vertex| match vertex.effective_recovery {
+                    Some(recovery) => format!("{recovery:.3}"),
+                    None => "Disabled".to_owned(),
+                })
                 .unwrap_or_default(),
             UiText::LegendMinimum => legend_minimum(min),
             UiText::LegendMaximum => format!("{max:.1}"),
@@ -248,6 +272,10 @@ fn spawn_inspector(commands: &mut Commands, snapshot: &SimulationSnapshot) {
                         ("Cell coordinates (x, y)", UiText::CellPosition),
                         ("Stored resource", UiText::StoredResource),
                         ("Cell resource", UiText::CellResource),
+                        ("Age (model time)", UiText::Age),
+                        ("Health", UiText::Health),
+                        ("Extraction capacity", UiText::UptakeCapacity),
+                        ("Recovery / paid tick", UiText::RecoveryPerTick),
                     ] {
                         details
                             .spawn(Node {

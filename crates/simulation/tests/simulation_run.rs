@@ -1,6 +1,6 @@
 use simulation::{
     field::{DiffusionError, Neighbourhood},
-    graph::Uptake,
+    graph::{HealthConfig, Uptake, VertexConfig},
     simulation::{SimulationConfig, SimulationError, SimulationRun},
 };
 
@@ -20,9 +20,12 @@ fn config() -> SimulationConfig {
 fn fixed_step_run_replays_completed_state() {
     let seed = 42;
     let dt = 0.125;
-    let uptake = Uptake::new(5.0, 1.0).unwrap();
-    let mut run = SimulationRun::single_vertex_from_seed(config(), seed, uptake, dt).unwrap();
-    let mut replay = SimulationRun::single_vertex_from_seed(config(), seed, uptake, dt).unwrap();
+    let vertex_config =
+        VertexConfig::new(Uptake::new(5.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
+    let mut run =
+        SimulationRun::single_vertex_from_seed(config(), seed, vertex_config.clone(), dt).unwrap();
+    let mut replay =
+        SimulationRun::single_vertex_from_seed(config(), seed, vertex_config.clone(), dt).unwrap();
 
     for view in [run.view(), replay.view()] {
         assert_eq!(view.seed, seed);
@@ -56,18 +59,19 @@ fn fixed_step_run_replays_completed_state() {
 
 #[test]
 fn run_rejects_invalid_timesteps_at_startup() {
-    let uptake = Uptake::new(5.0, 1.0).unwrap();
+    let vertex_config =
+        VertexConfig::new(Uptake::new(5.0, 1.0).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
 
     for dt in [0.0, -0.1, f64::INFINITY, f64::NAN] {
         assert!(matches!(
-            SimulationRun::single_vertex_from_seed(config(), 42, uptake, dt),
+            SimulationRun::single_vertex_from_seed(config(), 42, vertex_config.clone(), dt),
             Err(SimulationError::Diffusion(DiffusionError::InvalidTimestep(rejected)))
                 if rejected.to_bits() == dt.to_bits()
         ));
     }
 
     assert!(matches!(
-        SimulationRun::single_vertex_from_seed(config(), 42, uptake, 1.0),
+        SimulationRun::single_vertex_from_seed(config(), 42, vertex_config.clone(), 1.0),
         Err(SimulationError::Diffusion(DiffusionError::UnstableTimestep {
             diffusion_number,
             limit,

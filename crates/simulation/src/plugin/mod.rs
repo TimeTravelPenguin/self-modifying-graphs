@@ -18,7 +18,9 @@ use crate::{
 
 mod worker;
 
-pub use worker::SimulationControls;
+pub use worker::{
+    EffectUpdateOutcome, EffectUpdateTicket, SimulationControlError, SimulationControls,
+};
 
 use worker::SimulationWorker;
 
@@ -226,8 +228,8 @@ impl SimulationPlugin {
     }
 
     /// Starts a worker-backed graph run with one randomly placed vertex.
-    pub fn with_starting_vertex(mut self, config: impl Into<VertexConfig>) -> Self {
-        self.starting_vertex = Some(config.into());
+    pub fn with_starting_vertex(mut self, config: VertexConfig) -> Self {
+        self.starting_vertex = Some(config);
         self
     }
 
@@ -281,8 +283,8 @@ impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
         let seed = self.seed.unwrap_or_else(rand::random);
 
-        if let Some(vertex) = self.starting_vertex {
-            self.install_worker(app, vertex, seed);
+        if let Some(vertex) = &self.starting_vertex {
+            self.install_worker(app, vertex.clone(), seed);
             return;
         }
 

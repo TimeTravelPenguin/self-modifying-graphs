@@ -2,7 +2,12 @@ use std::sync::{Arc, Mutex};
 
 use bevy::ecs::resource::Resource;
 
-use crate::{Position, field::ResourceField, graph::VertexId};
+use crate::{
+    Position,
+    effects::EffectMultipliers,
+    field::ResourceField,
+    graph::{VertexConfig, VertexId},
+};
 
 /// Owned field and vertex state at a completed tick.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,7 +27,7 @@ pub struct SimulationSnapshot {
 }
 
 /// A vertex's state at a completed tick.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VertexSnapshot {
     /// Identifier scoped to the graph that issued it.
     pub id: VertexId,
@@ -30,6 +35,18 @@ pub struct VertexSnapshot {
     pub position: Position,
     /// Current resource balance after uptake and living costs.
     pub stored_resource: f64,
+    /// Age in model-time units at the completed tick.
+    pub age: f64,
+    /// Current health, or `None` when health is disabled.
+    pub health: Option<f64>,
+    /// Applied base parameters and shared immutable effect set.
+    pub config: VertexConfig,
+    /// Revision of this vertex's effect configuration, starting at zero.
+    pub effects_revision: u64,
+    /// Multipliers evaluated from the completed state for the next tick.
+    pub effective_effects: EffectMultipliers,
+    /// Potential recovery per fully paid tick, or `None` when health is disabled.
+    pub effective_recovery: Option<f64>,
 }
 
 /// Publishes completed states from a single run, keeping the latest one available.

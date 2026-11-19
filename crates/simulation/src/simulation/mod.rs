@@ -5,8 +5,9 @@ use thiserror::Error;
 
 use crate::{
     Position,
+    effects::{EffectMultipliers, EffectsConfig},
     field::{Diffuser, DiffusionError, ResourceField},
-    graph::{AddEdgeError, Edge, EdgeId, Graph, Vertex, VertexConfig, VertexId},
+    graph::{AddEdgeError, Edge, EdgeId, Graph, Vertex, VertexConfig, VertexConfigError, VertexId},
 };
 
 mod run;
@@ -29,6 +30,14 @@ pub mod resources {
 /// Errors from placing vertices, connecting a graph, or configuring a run.
 #[derive(Debug, Error)]
 pub enum SimulationError {
+    /// An effect replacement addressed a vertex that is no longer alive.
+    #[error("vertex {0:?} is absent from the simulation")]
+    UnknownVertex(VertexId),
+
+    /// The replacement effects are incompatible with the vertex's base quantities.
+    #[error(transparent)]
+    VertexConfig(#[from] VertexConfigError),
+
     /// A seeded run requires a cell for its first vertex.
     #[error("a starting vertex requires a grid with positive width and height")]
     EmptyGrid,
@@ -79,6 +88,8 @@ pub struct Simulation {
     diffusion_coefficient: f64,
     spacing: f64,
     occupancy: Vec<Option<VertexId>>,
+    tick_effects: Vec<(VertexId, EffectMultipliers)>,
+    expired_vertices: Vec<VertexId>,
 }
 
 impl Simulation {
@@ -112,6 +123,8 @@ impl Simulation {
             diffusion_coefficient,
             spacing,
             occupancy,
+            tick_effects: Vec::new(),
+            expired_vertices: Vec::new(),
         }
     }
 
@@ -154,7 +167,7 @@ impl Simulation {
     pub fn single_vertex_from_seed(
         config: SimulationConfig,
         seed: u32,
-        vertex_config: impl Into<VertexConfig>,
+        vertex_config: VertexConfig,
     ) -> Result<Self, SimulationError> {
         if config.width == 0 || config.height == 0 {
             return Err(SimulationError::EmptyGrid);
@@ -194,7 +207,7 @@ impl Simulation {
     pub fn add_vertex(
         &mut self,
         position: impl Into<Position>,
-        config: impl Into<VertexConfig>,
+        config: VertexConfig,
     ) -> Result<VertexId, SimulationError> {
         let position = position.into();
         let index = self
@@ -240,19 +253,48 @@ impl Simulation {
         self.graph.remove_edge(edge_id)
     }
 
-    /// Diffuses the field, then applies uptake and living costs to each vertex.
+    /// Replaces one vertex's effects between steps and returns its new revision.
+    ///
+    /// Age, health, resource balance, and base configuration are preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an absent vertex, amplified quantities that would
+    /// overflow, or an exhausted revision counter. Rejection leaves the vertex intact.
+    pub fn set_vertex_effects(
+        &mut self,
+        vertex_id: VertexId,
+        effects: EffectsConfig,
+    ) -> Result<u64, SimulationError> {
+        self.graph
+            .vertex_mut(vertex_id)
+            .ok_or(SimulationError::UnknownVertex(vertex_id))?
+            .set_effects(effects)
+            .map_err(Into::into)
+    }
+
+    /// Diffuses the field, then applies uptake, costs, health changes, aging, and death.
     ///
     /// `dt` is the elapsed model time. Each vertex applies its uptake law to
     /// the cell amount after diffusion, caps withdrawal at that amount, and
     /// stores the efficiency-adjusted share before paying its living cost.
-    /// The living cost is charged once per call, including when `dt` is zero,
-    /// and the payment is capped at the vertex's stored balance.
+    /// Effects read beginning-of-tick age and health. Every vertex completes
+    /// uptake before payments begin. Living cost and health changes occur once
+    /// per call, including when `dt` is zero. Age advances by `dt` units of model time.
+    /// Expired vertices are removed after all updates, freeing their cells and edges.
     ///
     /// # Panics
     ///
     /// Panics before updating the field if `dt` is negative, non-finite, or exceeds the
-    /// stability limit for the configured diffuser.
+    /// stability limit for the configured diffuser, or if a vertex's age would overflow.
     pub fn step(&mut self, dt: f64) {
+        assert!(
+            self.graph
+                .vertices()
+                .all(|(_, vertex)| vertex.can_advance_age(dt)),
+            "model timestep must be finite, nonnegative, and keep vertex ages finite"
+        );
+
         self.diffuser.diffuse(
             &mut self.field,
             self.diffusion_coefficient,
@@ -260,21 +302,45 @@ impl Simulation {
             self.spacing,
         );
 
-        for vertex in self.graph.vertices_mut() {
+        self.tick_effects.clear();
+        self.expired_vertices.clear();
+
+        for (id, vertex) in self.graph.vertices_mut() {
+            self.tick_effects.push((id, vertex.effective_effects()));
+        }
+
+        for &(id, effects) in &self.tick_effects {
+            let vertex = self.graph.vertex_mut(id).expect("tick vertex is alive");
             let available = self
                 .field
                 .get_resource_at_mut(vertex.position())
                 .expect("vertex is in the field");
 
-            vertex.consume(available, dt);
-            vertex.pay_living_cost();
+            vertex.consume(available, dt, effects.uptake_capacity);
+        }
+
+        for &(id, effects) in &self.tick_effects {
+            let vertex = self.graph.vertex_mut(id).expect("tick vertex is alive");
+            let payment = vertex.pay_living_cost();
+            vertex.finish_tick(payment, effects, dt);
+
+            if vertex.is_expired() {
+                self.expired_vertices.push(id);
+            }
+        }
+
+        while let Some(id) = self.expired_vertices.pop() {
+            self.remove_vertex(id);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{field::Neighbourhood, graph::Uptake};
+    use crate::{
+        field::Neighbourhood,
+        graph::{HealthConfig, Uptake},
+    };
 
     use super::*;
 
@@ -285,17 +351,18 @@ mod tests {
 
         let mut simulation =
             Simulation::new(field, Diffuser::new(Neighbourhood::VonNeumann), 0.0, 1.0);
-        let uptake = Uptake::new(5.0, 0.8).unwrap();
-        let left = simulation.add_vertex((0, 0), uptake).unwrap();
-        let right = simulation.add_vertex((1, 0), uptake).unwrap();
+        let config =
+            VertexConfig::new(Uptake::new(5.0, 0.8).unwrap(), 0.0, HealthConfig::Disabled).unwrap();
+        let left = simulation.add_vertex((0, 0), config.clone()).unwrap();
+        let right = simulation.add_vertex((1, 0), config.clone()).unwrap();
         let edge = simulation.add_edge(left, right).unwrap();
 
         assert!(matches!(
-            simulation.add_vertex((0, 0), uptake),
+            simulation.add_vertex((0, 0), config.clone()),
             Err(SimulationError::CellOccupied(Position { x: 0, y: 0 }))
         ));
         assert!(matches!(
-            simulation.add_vertex((2, 0), uptake),
+            simulation.add_vertex((2, 0), config.clone()),
             Err(SimulationError::VertexOutOfBounds(Position { x: 2, y: 0 }))
         ));
         assert!(matches!(
@@ -334,7 +401,7 @@ mod tests {
                 .is_empty()
         );
 
-        let replacement = simulation.add_vertex((0, 0), uptake).unwrap();
+        let replacement = simulation.add_vertex((0, 0), config.clone()).unwrap();
         assert_ne!(replacement, left);
         assert!(simulation.remove_vertex(left).is_none());
         assert_eq!(simulation.vertex_at((0, 0)), Some(replacement));
@@ -348,7 +415,11 @@ mod tests {
         let mut simulation =
             Simulation::new(field, Diffuser::new(Neighbourhood::VonNeumann), 0.25, 1.0);
         let vertex = simulation
-            .add_vertex((0, 0), Uptake::new(2.0, 0.5).unwrap())
+            .add_vertex(
+                (0, 0),
+                VertexConfig::new(Uptake::new(2.0, 0.5).unwrap(), 0.0, HealthConfig::Disabled)
+                    .unwrap(),
+            )
             .unwrap();
 
         simulation.step(1.0);
